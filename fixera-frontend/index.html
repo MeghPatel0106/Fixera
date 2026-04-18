@@ -1,74 +1,353 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Fixera — AI-powered complaint analyzer. Paste a customer complaint and get instant category, priority, and sentiment analysis." />
-  <title>Fixera — Complaint Analyzer</title>
+  <meta name="description" content="Fixera — AI-powered complaint management dashboard." />
+  <title>Fixera Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-inner">
-      <div class="navbar-brand">Fixera</div>
-      <div class="navbar-label">AI Complaint Analysis System</div>
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">⚡</span>
+      <span class="brand-text">Fixera</span>
     </div>
-  </nav>
 
-  <!-- Main Content -->
-  <main class="main-container">
-    <div class="dashboard-grid">
+    <div class="sidebar-section-label">Navigation</div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="dashboard" id="nav-dashboard">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path
+            d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+        </svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="analyze" id="nav-analyze">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd"
+            d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+            clip-rule="evenodd" />
+        </svg>
+        Analyze
+      </button>
+      <button class="nav-item" data-view="history" id="nav-history">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd"
+            d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+            clip-rule="evenodd" />
+        </svg>
+        History
+      </button>
+      <button class="nav-item" data-view="insights" id="nav-insights">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path
+            d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zm4.071 1.929a1 1 0 00-1.414 0l-.707.707a1 1 0 101.414 1.414l.707-.707a1 1 0 000-1.414zM4.343 5.636a1 1 0 011.414 0l.707.707A1 1 0 115.05 7.757l-.707-.707a1 1 0 010-1.414zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm6-8a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM4 11a1 1 0 100-2H3a1 1 0 000 2h1zm7-4a1 1 0 11-2 0 1 1 0 012 0zm-1 9a5 5 0 100-10 5 5 0 000 10z" />
+        </svg>
+        Insights
+      </button>
+      <button class="nav-item" data-view="report" id="nav-report">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
+        </svg>
+        Report
+      </button>
+    </nav>
+  </aside>
 
-      <!-- LEFT: Input Panel -->
-      <section class="card input-card" id="input-section">
-        <h2 class="card-title">Submit Complaint</h2>
-        <p class="card-subtitle">Enter the customer complaint text below for analysis.</p>
+  <!-- ========== MAIN WRAPPER ========== -->
+  <div class="main-wrapper">
 
-        <label for="complaint-input" class="input-label">Complaint Text</label>
-        <textarea
-          id="complaint-input"
-          placeholder="e.g. My order arrived broken and customer service was unhelpful…"
-          rows="7"
-        ></textarea>
-        <p class="helper-text">Tip: Include details like product issues, delivery problems, or service feedback for better results.</p>
+    <!-- Top Header -->
+    <header class="top-header" id="top-header">
+      <h1 class="header-title" id="page-title">Dashboard</h1>
+      <span class="header-label">Fixera AI System</span>
+    </header>
 
-        <div class="examples-section" id="examples-section">
-          <p class="examples-title">Try Example Complaints</p>
-          <div class="examples-buttons">
-            <button type="button" class="example-btn" data-text="Product is broken and leaking">Product is broken and leaking</button>
-            <button type="button" class="example-btn" data-text="Delivery was very late">Delivery was very late</button>
-            <button type="button" class="example-btn" data-text="The packaging was damaged">The packaging was damaged</button>
-            <button type="button" class="example-btn" data-text="I am very unhappy with the service">I am very unhappy with the service</button>
-            <button type="button" class="example-btn" data-text="Great service, thank you">Great service, thank you</button>
+    <!-- ========== CONTENT AREA ========== -->
+    <main class="content">
+
+      <!-- ===== DASHBOARD VIEW ===== -->
+      <section class="view active" id="view-dashboard">
+
+        <!-- Stat Cards -->
+        <div class="stat-cards">
+          <div class="stat-card stat-total">
+            <div class="stat-accent"></div>
+            <div class="stat-body">
+              <div class="stat-label">Total Complaints</div>
+              <div class="stat-value" id="stat-total">0</div>
+            </div>
+          </div>
+          <div class="stat-card stat-high">
+            <div class="stat-accent"></div>
+            <div class="stat-body">
+              <div class="stat-label">High Priority</div>
+              <div class="stat-value" id="stat-high">0</div>
+            </div>
+          </div>
+          <div class="stat-card stat-medium">
+            <div class="stat-accent"></div>
+            <div class="stat-body">
+              <div class="stat-label">Medium Priority</div>
+              <div class="stat-value" id="stat-medium">0</div>
+            </div>
+          </div>
+          <div class="stat-card stat-low">
+            <div class="stat-accent"></div>
+            <div class="stat-body">
+              <div class="stat-label">Low Priority</div>
+              <div class="stat-value" id="stat-low">0</div>
+            </div>
           </div>
         </div>
 
-        <button id="analyze-btn" type="button">
-          <span class="btn-text">Analyze</span>
-          <span class="btn-loader hidden" id="btn-loader"></span>
-        </button>
+        <!-- Charts -->
+        <div class="dash-section-title">Analytics Overview</div>
+        <div class="charts-row">
+          <div class="card chart-card">
+            <h3 class="card-title">Complaints by Category</h3>
+            <div class="chart-container"><canvas id="chart-category"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <h3 class="card-title">Priority Distribution</h3>
+            <div class="chart-container"><canvas id="chart-priority"></canvas></div>
+          </div>
+        </div>
 
-        <!-- Error message -->
-        <p class="error-msg hidden" id="error-msg"></p>
-      </section>
-
-      <!-- RIGHT: Results Panel -->
-      <section class="card results-card" id="results-section">
-        <h2 class="card-title">Analysis Result</h2>
-        <p class="card-subtitle result-placeholder" id="result-placeholder">Submit a complaint to see the analysis here.</p>
-        <div id="results-grid">
-          <!-- Populated by JS -->
+        <!-- Recent Activity -->
+        <div class="dash-section-title">Recent Activity</div>
+        <div class="card recent-card">
+          <div id="dashboard-recent">
+            <p class="empty-state">No complaints analyzed yet. Go to <strong>Analyze</strong> to get started.</p>
+          </div>
         </div>
       </section>
 
-    </div>
-  </main>
+      <!-- ===== ANALYZE VIEW ===== -->
+      <section class="view" id="view-analyze">
+        <div class="analyze-grid">
+          <div class="card" id="input-section">
+            <h3 class="card-title">Submit Complaint</h3>
+            <p class="card-desc">Enter the customer complaint text for AI-powered analysis.</p>
 
+            <label for="complaint-input" class="field-label">Complaint Text</label>
+            <textarea id="complaint-input"
+              placeholder="e.g. My order arrived broken and customer service was unhelpful…" rows="6"></textarea>
+
+            <div class="examples-section">
+              <p class="examples-label">Quick Examples</p>
+              <div class="examples-wrap">
+                <button type="button" class="chip" data-text="Product is broken and leaking">Broken product</button>
+                <button type="button" class="chip" data-text="Delivery was very late">Late delivery</button>
+                <button type="button" class="chip" data-text="The packaging was damaged">Damaged packaging</button>
+                <button type="button" class="chip" data-text="I am very unhappy with the service">Bad service</button>
+                <button type="button" class="chip" data-text="Great service, thank you">Positive feedback</button>
+              </div>
+            </div>
+
+            <button id="analyze-btn" type="button">
+              <span class="btn-text">Analyze Complaint</span>
+              <span class="btn-loader hidden" id="btn-loader"></span>
+            </button>
+            <p class="error-msg hidden" id="error-msg"></p>
+          </div>
+
+          <div class="card" id="results-section">
+            <h3 class="card-title">Analysis Result</h3>
+            <p class="card-desc result-placeholder" id="result-placeholder">Submit a complaint to see results here.</p>
+            <div id="results-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== HISTORY VIEW ===== -->
+      <section class="view" id="view-history">
+        <div class="card">
+          <h3 class="card-title">Complaint History</h3>
+          <p class="card-desc">All analyzed complaints stored in the system.</p>
+          <div class="table-wrap">
+            <table class="data-table" id="history-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Complaint</th>
+                  <th>Category</th>
+                  <th>Priority</th>
+                  <th>Sentiment</th>
+                  <th>Timeline</th>
+                </tr>
+              </thead>
+              <tbody id="history-body"></tbody>
+            </table>
+          </div>
+          <p class="empty-state" id="history-empty">No complaints analyzed yet.</p>
+        </div>
+      </section>
+
+      <!-- ===== INSIGHTS VIEW ===== -->
+      <section class="view" id="view-insights">
+
+        <div id="insights-empty" class="card" style="display:none;">
+          <p class="empty-state">No complaint data available yet. Analyze complaints to see insights.</p>
+        </div>
+
+        <div id="insights-content">
+          <!-- Row 1: Sentiment + Trend -->
+          <div class="dash-section-title">Sentiment &amp; Trends</div>
+          <div class="insights-chart-row">
+            <div class="card chart-card">
+              <h3 class="card-title">Customer Sentiment Overview</h3>
+              <div class="chart-container"><canvas id="ins-chart-sentiment"></canvas></div>
+            </div>
+            <div class="card chart-card">
+              <h3 class="card-title">Complaint Growth Trend</h3>
+              <div class="chart-container"><canvas id="ins-chart-trend"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Row 3: Critical + Insights -->
+          <div class="dash-section-title">Risk Analysis &amp; Key Findings</div>
+          <div class="insights-chart-row">
+            <div class="card chart-card">
+              <h3 class="card-title">Critical vs Normal Cases</h3>
+              <div class="chart-container"><canvas id="ins-chart-critical"></canvas></div>
+            </div>
+            <div class="card">
+              <h3 class="card-title">Data-Driven Insights</h3>
+              <div class="insight-list" id="insights-list">
+                <div class="insight-row">📊 System initialized — analyze complaints to generate insights.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detection Summary -->
+          <div class="dash-section-title">Detection Summary</div>
+          <div class="detect-row">
+            <div class="detect-card">
+              <div class="detect-value" id="detect-risk">0</div>
+              <div class="detect-label">High-risk</div>
+            </div>
+            <div class="detect-card">
+              <div class="detect-value" id="detect-matches">0</div>
+              <div class="detect-label">Dataset Matches</div>
+            </div>
+            <div class="detect-card">
+              <div class="detect-value" id="detect-escalations">0</div>
+              <div class="detect-label">Escalations</div>
+            </div>
+            <div class="detect-card">
+              <div class="detect-value" id="detect-positive">0</div>
+              <div class="detect-label">Positive</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== REPORT VIEW ===== -->
+      <section class="view" id="view-report">
+
+        <div class="rpt-grid">
+          <!-- LEFT: Upload & Actions -->
+          <div class="rpt-card rpt-upload-card">
+            <h3 class="rpt-heading">Generate Report</h3>
+            <p class="rpt-subtext">Upload a CSV file or use existing complaint data to create a PDF analysis report.</p>
+
+            <!-- Drop zone -->
+            <div class="rpt-dropzone" id="report-drop-zone">
+              <svg class="rpt-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2"/></svg>
+              <p class="rpt-dropzone-title">Drop CSV file here</p>
+              <p class="rpt-dropzone-hint">or click to browse</p>
+              <input type="file" id="report-csv-upload" accept=".csv" />
+              <span class="rpt-file-badge hidden" id="report-file-name"></span>
+            </div>
+
+            <!-- Buttons -->
+            <div class="rpt-btn-row">
+              <button class="rpt-btn rpt-btn-primary" id="report-generate-btn" type="button">
+                <span class="btn-text">Generate Report</span>
+                <span class="btn-loader hidden" id="report-btn-loader"></span>
+              </button>
+              <button class="rpt-btn rpt-btn-outline" id="report-use-email-btn" type="button">
+                Use Email Data
+              </button>
+            </div>
+
+            <!-- Error -->
+            <p class="error-msg hidden" id="report-error-msg"></p>
+
+            <!-- Success alert -->
+            <div class="rpt-alert rpt-alert-success hidden" id="report-success-banner">
+              <svg class="rpt-alert-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+              <div>
+                <div class="rpt-alert-title" id="report-success-title">Report generated successfully</div>
+                <div class="rpt-alert-detail" id="report-success-detail"></div>
+              </div>
+            </div>
+
+            <!-- Download -->
+            <a class="rpt-download hidden" id="report-download-link" href="#" download>
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+              Download PDF Report
+            </a>
+          </div>
+
+          <!-- RIGHT: Preview + Summary -->
+          <div class="rpt-card" id="report-preview">
+            <h3 class="rpt-heading">Report Summary</h3>
+            <p class="rpt-subtext" id="report-preview-text">Generate a report to see results here.</p>
+            <div id="report-preview-stats" class="hidden">
+              <div class="rpt-stat-row" id="report-stat-cards"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="rpt-card rpt-history-card">
+          <div class="rpt-history-header">
+            <h3 class="rpt-heading">Report History</h3>
+            <p class="rpt-subtext">All generated reports are stored and available for download.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="rpt-table" id="report-history-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Report</th>
+                  <th>Created</th>
+                  <th>Complaints</th>
+                  <th>High</th>
+                  <th>Med</th>
+                  <th>Low</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="report-history-body">
+                <tr class="rpt-empty-row"><td colspan="8">
+                  <div class="rpt-empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <p class="rpt-empty-title">No reports yet</p>
+                    <p class="rpt-empty-hint">Generate your first report to see history here</p>
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
+
 </html>
