@@ -101,12 +101,27 @@ def extract_body(msg):
 
 
 def ensure_csv_exists():
-    """Create CSV file with headers if it doesn't exist."""
+    """Create CSV file with headers if it doesn't exist, or fix missing headers."""
+    headers = ['email', 'subject', 'description', 'fetched_at']
     if not os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['email', 'subject', 'description', 'fetched_at'])
+            writer.writerow(headers)
         logger.info(f'Created CSV file: {CSV_FILE}')
+        return
+
+    # Check if header exists — fix if missing
+    with open(CSV_FILE, 'r', encoding='utf-8') as f:
+        first_line = f.readline().strip().lower()
+    if 'email' not in first_line or 'description' not in first_line:
+        # Prepend header to existing data
+        with open(CSV_FILE, 'r', encoding='utf-8') as f:
+            existing = f.read()
+        with open(CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            f.write(existing)
+        logger.info('Restored missing CSV headers.')
 
 
 def append_to_csv(rows):

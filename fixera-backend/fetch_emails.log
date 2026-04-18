@@ -21,3 +21,52 @@
 2026-04-19 00:20:17,135 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
 2026-04-19 00:20:17,928 [ERROR] Missing EMAIL or PASSWORD environment variables.
 2026-04-19 00:20:17,928 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
+2026-04-19 02:47:31,404 [INFO] Connecting to Gmail IMAP...
+2026-04-19 02:47:33,028 [INFO] Login successful.
+2026-04-19 02:47:33,741 [INFO] Found 5 new email(s). Processing...
+2026-04-19 02:47:34,424 [INFO]   [1] From: no-reply@google.com | Subject: ✅ Finish setting up your new Google Account on you
+2026-04-19 02:47:34,904 [INFO]   [2] From: googleplay-noreply@google.com | Subject: Your new privacy settings on Play
+2026-04-19 02:47:35,671 [INFO]   [3] From: no-reply@accounts.google.com | Subject: Security alert
+2026-04-19 02:47:36,194 [INFO]   [4] From: no-reply@accounts.google.com | Subject: 2-Step Verification turned on
+2026-04-19 02:47:36,820 [INFO]   [5] From: no-reply@accounts.google.com | Subject: Security alert
+2026-04-19 02:47:36,823 [INFO] Saved 5 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 02:47:36,823 [INFO] Done.
+2026-04-19 02:51:47,002 [INFO] Connecting to Gmail IMAP...
+2026-04-19 02:51:48,514 [INFO] Login successful.
+2026-04-19 02:51:49,323 [INFO] Found 1 new email(s). Processing...
+2026-04-19 02:51:49,918 [INFO]   [1] From: megh2850@gmail.com | Subject: Complaint for washing machine
+2026-04-19 02:51:49,919 [INFO] Saved 1 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 02:51:49,919 [INFO] Done.
+2026-04-19 03:01:23,064 [INFO] Restored missing CSV headers.
+2026-04-19 03:01:23,064 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:01:24,499 [INFO] Login successful.
+2026-04-19 03:01:25,274 [INFO] Found 1 new email(s). Processing...
+2026-04-19 03:01:25,770 [INFO]   [1] From: kunjvaghani1.2448@gmail.com | Subject: Product replacement
+2026-04-19 03:01:25,770 [INFO] Saved 1 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 03:01:25,770 [INFO] Done.
+2026-04-19 03:12:50,890 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:12:52,546 [INFO] Login successful.
+2026-04-19 03:12:53,169 [INFO] No new (unseen) emails found.
+2026-04-19 03:16:08,104 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:16:09,768 [INFO] Login successful.
+2026-04-19 03:16:10,792 [INFO] No new (unseen) emails found.
+2026-04-19 03:19:24,196 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:19:25,472 [INFO] Login successful.
+2026-04-19 03:19:26,258 [INFO] Found 1 new email(s). Processing...
+2026-04-19 03:19:26,721 [INFO]   [1] From: kunjvaghani1.2448@gmail.com | Subject: Delay for delivery
+2026-04-19 03:19:26,721 [INFO] Saved 1 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 03:19:26,722 [INFO] Done.
+2026-04-19 03:22:09,813 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:22:11,123 [INFO] Login successful.
+2026-04-19 03:22:11,751 [INFO] Found 2 new email(s). Processing...
+2026-04-19 03:22:12,376 [INFO]   [1] From: kunjvaghani1.2448@gmail.com | Subject: Package leakage
+2026-04-19 03:22:12,881 [INFO]   [2] From: kunjvaghani1.2448@gmail.com | Subject: No return policy
+2026-04-19 03:22:12,883 [INFO] Saved 2 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 03:22:12,883 [INFO] Done.
+2026-04-19 03:27:16,917 [INFO] Connecting to Gmail IMAP...
+2026-04-19 03:27:18,235 [INFO] Login successful.
+2026-04-19 03:27:19,053 [INFO] Found 2 new email(s). Processing...
+2026-04-19 03:27:19,542 [INFO]   [1] From: kunjvaghani1.2448@gmail.com | Subject: Same issue again and again for P3054
+2026-04-19 03:27:20,021 [INFO]   [2] From: kunjvaghani1.2448@gmail.com | Subject: Increase in the price of item P456
+2026-04-19 03:27:20,022 [INFO] Saved 2 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-19 03:27:20,022 [INFO] Done.

@@ -23,6 +23,8 @@ const DOM = {
   pageTitle: document.getElementById('page-title'),
   historyBody: document.getElementById('history-body'),
   historyEmpty: document.getElementById('history-empty'),
+  customerName: document.getElementById('customer-name'),
+  orderId: document.getElementById('order-id'),
 };
 
 // ============================================================
@@ -66,10 +68,12 @@ DOM.input.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleAnalyze();
 });
 
-document.querySelectorAll('.chip').forEach(btn => {
-  btn.addEventListener('click', () => {
-    DOM.input.value = btn.getAttribute('data-text');
-    DOM.input.focus();
+// Clear validation on input
+document.querySelectorAll('#input-section input, #input-section textarea').forEach(el => {
+  el.addEventListener('input', () => {
+    el.classList.remove('input-error');
+    const errEl = el.parentElement?.querySelector('.field-error') || (el.id === 'complaint-input' ? document.getElementById('err-text') : null);
+    if (errEl) errEl.classList.add('hidden');
   });
 });
 
@@ -77,8 +81,35 @@ document.querySelectorAll('.chip').forEach(btn => {
 // Main Handler
 // ============================================================
 async function handleAnalyze() {
+  // Clear previous validation
+  document.querySelectorAll('.field-error').forEach(e => e.classList.add('hidden'));
+  document.querySelectorAll('#input-section input, #input-section textarea').forEach(e => e.classList.remove('input-error'));
+
+  const name = (DOM.customerName?.value || '').trim();
+  const orderId = (DOM.orderId?.value || '').trim();
   const text = DOM.input.value.trim();
-  if (!text) { showError('Please enter a complaint before analyzing.'); return; }
+
+  // Validate required fields
+  let hasError = false;
+  if (!name) {
+    document.getElementById('err-name')?.classList.remove('hidden');
+    DOM.customerName?.classList.add('input-error');
+    hasError = true;
+  }
+  if (!orderId) {
+    document.getElementById('err-order')?.classList.remove('hidden');
+    DOM.orderId?.classList.add('input-error');
+    hasError = true;
+  }
+  if (!text) {
+    document.getElementById('err-text')?.classList.remove('hidden');
+    DOM.input?.classList.add('input-error');
+    hasError = true;
+  }
+  if (hasError) {
+    showError('Please fill all required fields.');
+    return;
+  }
 
   hideError();
   setLoading(true);
@@ -87,7 +118,7 @@ async function handleAnalyze() {
     const res = await fetch(PREDICT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, customer_name: name, order_id: orderId }),
     });
 
     if (!res.ok) {
@@ -242,7 +273,7 @@ function addToHistory(text, data) {
     <td>${data.category}</td>
     <td><span class="${priBadge}">${data.priority}</span></td>
     <td>${data.sentiment}</td>
-    <td><span class="badge badge-timeline badge-timeline-${(data.priority || '').toLowerCase()}">${{High:'Within 12 hours',Medium:'Within 48 hours',Low:'Within 72 hours'}[data.priority] || 'N/A'}</span></td>`;
+    <td><span class="badge badge-timeline badge-timeline-${(data.priority || '').toLowerCase()}">${{ High: 'Within 12 hours', Medium: 'Within 48 hours', Low: 'Within 72 hours' }[data.priority] || 'N/A'}</span></td>`;
 
   DOM.historyBody.prepend(row);
 
@@ -525,11 +556,13 @@ async function refreshDashboard() {
         priBadge += c.priority === 'High' ? ' badge-danger' : c.priority === 'Medium' ? ' badge-warning' : ' badge-success';
         row.innerHTML = `
           <td>${complaints.length - i}</td>
+          <td title="${c.customer_name || 'N/A'}">${(c.customer_name || 'N/A').slice(0, 20)}</td>
+          <td>${c.order_id || 'N/A'}</td>
           <td><span class="text-truncate">${shortText}</span></td>
           <td>${c.category}</td>
           <td><span class="${priBadge}">${c.priority}</span></td>
           <td>${c.sentiment}</td>
-          <td><span class="badge badge-timeline">${{High:'Within 12 hours',Medium:'Within 48 hours',Low:'Within 72 hours'}[c.priority] || 'N/A'}</span></td>`;
+          <td><span class="badge badge-timeline">${{ High: 'Within 12 hours', Medium: 'Within 48 hours', Low: 'Within 72 hours' }[c.priority] || 'N/A'}</span></td>`;
         DOM.historyBody.appendChild(row);
 
         // Count insight metrics
@@ -553,15 +586,16 @@ async function refreshDashboard() {
             const date = rpt.created_at ? new Date(rpt.created_at).toLocaleString() : '';
             row.innerHTML = `
               <td><span class="badge" style="background:#eef2ff;color:#2563eb;font-size:0.7rem;">Report</span></td>
-              <td><span class="text-truncate">${rpt.filename}</span></td>
+              <td colspan="2"><span class="text-truncate">${rpt.filename}</span></td>
               <td style="font-size:0.8rem;color:var(--text-muted);">${date}</td>
               <td><strong>${rpt.total_complaints}</strong> complaints</td>
-              <td style="font-size:0.78rem;">H:${rpt.high_count||0} M:${rpt.medium_count||0} L:${rpt.low_count||0}</td>
+              <td style="font-size:0.78rem;">H:${rpt.high_count || 0} M:${rpt.medium_count || 0} L:${rpt.low_count || 0}</td>
+              <td></td>
               <td><span class="badge badge-timeline">Bulk analysis</span></td>`;
             DOM.historyBody.prepend(row);
           });
         }
-      } catch(e) { /* report history optional */ }
+      } catch (e) { /* report history optional */ }
 
       // Count sentiments
       const sentimentCounts = {};
@@ -754,7 +788,28 @@ refreshDashboard();
   }
 
   genBtn.addEventListener('click', () => generateReport(false));
-  emailBtn && emailBtn.addEventListener('click', () => generateReport(true));
+  emailBtn && emailBtn.addEventListener('click', async () => {
+    const errMsg = document.getElementById('report-error-msg');
+    const previewText = document.getElementById('report-preview-text');
+    try {
+      errMsg && errMsg.classList.add('hidden');
+      emailBtn.disabled = true;
+      emailBtn.textContent = '📧 Fetching emails…';
+      const check = await fetch('/use-email-data');
+      const info = await check.json();
+      if (!check.ok || info.error) {
+        throw new Error(info.error || 'No email data available');
+      }
+      if (previewText) previewText.textContent = `✅ ${info.rows} complaint(s) fetched from Gmail`;
+      emailBtn.textContent = '⏳ Generating report…';
+      await generateReport(true);
+    } catch (e) {
+      if (errMsg) { errMsg.textContent = '❌ ' + e.message; errMsg.classList.remove('hidden'); }
+    } finally {
+      emailBtn.disabled = false;
+      emailBtn.textContent = 'Use Email Data';
+    }
+  });
 
   // --- Report History ---
   async function loadReportHistory() {
@@ -797,4 +852,29 @@ refreshDashboard();
 
   // Load on page init
   loadReportHistory();
+})();
+
+// ============================================================
+// Auto-Refresh — Dashboard & Insights update every 6 seconds
+// ============================================================
+(function autoRefresh() {
+  let refreshing = false;
+  const INTERVAL_MS = 6000;
+
+  async function tick() {
+    if (refreshing) return;
+    if (document.visibilityState !== 'visible') return;
+    refreshing = true;
+    try {
+      await refreshDashboard();
+    } catch (e) { /* silent */ }
+    refreshing = false;
+  }
+
+  setInterval(tick, INTERVAL_MS);
+
+  // Refresh immediately when tab becomes visible again
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') tick();
+  });
 })();

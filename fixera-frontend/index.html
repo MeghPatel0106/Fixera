@@ -17,7 +17,7 @@
   <!-- ========== SIDEBAR ========== -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <span class="brand-icon">⚡</span>
+      <img src="logo.png" alt="Fixera" class="brand-icon-img">
       <span class="brand-text">Fixera</span>
     </div>
 
@@ -55,7 +55,9 @@
       </button>
       <button class="nav-item" data-view="report" id="nav-report">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
+          <path fill-rule="evenodd"
+            d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z"
+            clip-rule="evenodd" />
         </svg>
         Report
       </button>
@@ -136,22 +138,24 @@
         <div class="analyze-grid">
           <div class="card" id="input-section">
             <h3 class="card-title">Submit Complaint</h3>
-            <p class="card-desc">Enter the customer complaint text for AI-powered analysis.</p>
+            <p class="card-desc">Fill in the details below to analyze a customer complaint.</p>
 
-            <label for="complaint-input" class="field-label">Complaint Text</label>
-            <textarea id="complaint-input"
-              placeholder="e.g. My order arrived broken and customer service was unhelpful…" rows="6"></textarea>
-
-            <div class="examples-section">
-              <p class="examples-label">Quick Examples</p>
-              <div class="examples-wrap">
-                <button type="button" class="chip" data-text="Product is broken and leaking">Broken product</button>
-                <button type="button" class="chip" data-text="Delivery was very late">Late delivery</button>
-                <button type="button" class="chip" data-text="The packaging was damaged">Damaged packaging</button>
-                <button type="button" class="chip" data-text="I am very unhappy with the service">Bad service</button>
-                <button type="button" class="chip" data-text="Great service, thank you">Positive feedback</button>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="customer-name" class="field-label">Customer Name <span class="required">*</span></label>
+                <input type="text" id="customer-name" placeholder="Enter customer name" autocomplete="off">
+                <span class="field-error hidden" id="err-name">This field is required</span>
+              </div>
+              <div class="form-group">
+                <label for="order-id" class="field-label">Order ID <span class="required">*</span></label>
+                <input type="text" id="order-id" placeholder="Enter order ID" autocomplete="off">
+                <span class="field-error hidden" id="err-order">This field is required</span>
               </div>
             </div>
+
+            <label for="complaint-input" class="field-label">Complaint Text <span class="required">*</span></label>
+            <textarea id="complaint-input" placeholder="Describe the customer complaint in detail…" rows="5"></textarea>
+            <span class="field-error hidden" id="err-text">This field is required</span>
 
             <button id="analyze-btn" type="button">
               <span class="btn-text">Analyze Complaint</span>
@@ -178,6 +182,8 @@
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>Customer</th>
+                  <th>Order ID</th>
                   <th>Complaint</th>
                   <th>Category</th>
                   <th>Priority</th>
@@ -262,7 +268,10 @@
 
             <!-- Drop zone -->
             <div class="rpt-dropzone" id="report-drop-zone">
-              <svg class="rpt-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2"/></svg>
+              <svg class="rpt-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 16V4m0 0L8 8m4-4l4 4" />
+                <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" />
+              </svg>
               <p class="rpt-dropzone-title">Drop CSV file here</p>
               <p class="rpt-dropzone-hint">or click to browse</p>
               <input type="file" id="report-csv-upload" accept=".csv" />
@@ -285,7 +294,11 @@
 
             <!-- Success alert -->
             <div class="rpt-alert rpt-alert-success hidden" id="report-success-banner">
-              <svg class="rpt-alert-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+              <svg class="rpt-alert-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clip-rule="evenodd" />
+              </svg>
               <div>
                 <div class="rpt-alert-title" id="report-success-title">Report generated successfully</div>
                 <div class="rpt-alert-detail" id="report-success-detail"></div>
@@ -294,7 +307,11 @@
 
             <!-- Download -->
             <a class="rpt-download hidden" id="report-download-link" href="#" download>
-              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+                <path fill-rule="evenodd"
+                  d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                  clip-rule="evenodd" />
+              </svg>
               Download PDF Report
             </a>
           </div>
@@ -330,13 +347,19 @@
                 </tr>
               </thead>
               <tbody id="report-history-body">
-                <tr class="rpt-empty-row"><td colspan="8">
-                  <div class="rpt-empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    <p class="rpt-empty-title">No reports yet</p>
-                    <p class="rpt-empty-hint">Generate your first report to see history here</p>
-                  </div>
-                </td></tr>
+                <tr class="rpt-empty-row">
+                  <td colspan="8">
+                    <div class="rpt-empty-state">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36"
+                        height="36">
+                        <path
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p class="rpt-empty-title">No reports yet</p>
+                      <p class="rpt-empty-hint">Generate your first report to see history here</p>
+                    </div>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
