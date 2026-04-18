@@ -7,44 +7,66 @@
   <title>Fixera — Complaint Analyzer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="container">
-    <!-- Header -->
-    <header class="header" id="header">
-      <div class="logo">
-        <span class="logo-icon">⚡</span>
-        <h1>Fixera</h1>
-      </div>
-      <p class="tagline">Instant complaint analysis at your fingertips</p>
-    </header>
 
-    <!-- Input Card -->
-    <section class="card input-card" id="input-section">
-      <label for="complaint-input" class="input-label">Describe the complaint</label>
-      <textarea
-        id="complaint-input"
-        placeholder="e.g. My order arrived broken and customer service was unhelpful…"
-        rows="5"
-      ></textarea>
-      <button id="analyze-btn" type="button">
-        <span class="btn-text">Analyze</span>
-        <span class="btn-loader hidden" id="btn-loader"></span>
-      </button>
-    </section>
+  <!-- Navbar -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar-inner">
+      <div class="navbar-brand">Fixera</div>
+      <div class="navbar-label">AI Complaint Analysis System</div>
+    </div>
+  </nav>
 
-    <!-- Error message -->
-    <p class="error-msg hidden" id="error-msg"></p>
+  <!-- Main Content -->
+  <main class="main-container">
+    <div class="dashboard-grid">
 
-    <!-- Results Card -->
-    <section class="card results-card hidden" id="results-section">
-      <h2 class="results-title">Analysis Results</h2>
-      <div class="results-grid" id="results-grid">
-        <!-- Populated by JS -->
-      </div>
-    </section>
+      <!-- LEFT: Input Panel -->
+      <section class="card input-card" id="input-section">
+        <h2 class="card-title">Submit Complaint</h2>
+        <p class="card-subtitle">Enter the customer complaint text below for analysis.</p>
+
+        <label for="complaint-input" class="input-label">Complaint Text</label>
+        <textarea
+          id="complaint-input"
+          placeholder="e.g. My order arrived broken and customer service was unhelpful…"
+          rows="7"
+        ></textarea>
+        <p class="helper-text">Tip: Include details like product issues, delivery problems, or service feedback for better results.</p>
+
+        <div class="examples-section" id="examples-section">
+          <p class="examples-title">Try Example Complaints</p>
+          <div class="examples-buttons">
+            <button type="button" class="example-btn" data-text="Product is broken and leaking">Product is broken and leaking</button>
+            <button type="button" class="example-btn" data-text="Delivery was very late">Delivery was very late</button>
+            <button type="button" class="example-btn" data-text="The packaging was damaged">The packaging was damaged</button>
+            <button type="button" class="example-btn" data-text="I am very unhappy with the service">I am very unhappy with the service</button>
+            <button type="button" class="example-btn" data-text="Great service, thank you">Great service, thank you</button>
+          </div>
+        </div>
+
+        <button id="analyze-btn" type="button">
+          <span class="btn-text">Analyze</span>
+          <span class="btn-loader hidden" id="btn-loader"></span>
+        </button>
+
+        <!-- Error message -->
+        <p class="error-msg hidden" id="error-msg"></p>
+      </section>
+
+      <!-- RIGHT: Results Panel -->
+      <section class="card results-card" id="results-section">
+        <h2 class="card-title">Analysis Result</h2>
+        <p class="card-subtitle result-placeholder" id="result-placeholder">Submit a complaint to see the analysis here.</p>
+        <div id="results-grid">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+    </div>
   </main>
 
   <script src="app.js"></script>
