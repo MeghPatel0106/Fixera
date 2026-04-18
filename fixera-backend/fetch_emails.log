@@ -1,0 +1,23 @@
+2026-04-18 23:38:42,751 [INFO] Created CSV file: /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-18 23:38:42,752 [INFO] Connecting to Gmail IMAP...
+2026-04-18 23:38:49,557 [INFO] Login successful.
+2026-04-18 23:38:51,660 [INFO] No new (unseen) emails found.
+2026-04-18 23:40:13,563 [ERROR] Missing EMAIL or PASSWORD environment variables.
+2026-04-18 23:40:13,564 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
+2026-04-18 23:40:19,769 [ERROR] Missing EMAIL or PASSWORD environment variables.
+2026-04-18 23:40:19,769 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
+2026-04-18 23:40:40,210 [INFO] Connecting to Gmail IMAP...
+2026-04-18 23:40:46,930 [INFO] Login successful.
+2026-04-18 23:40:48,333 [INFO] No new (unseen) emails found.
+2026-04-18 23:43:11,521 [INFO] Connecting to Gmail IMAP...
+2026-04-18 23:43:13,436 [INFO] Login successful.
+2026-04-18 23:43:14,562 [INFO] Found 1 new email(s). Processing...
+2026-04-18 23:43:15,843 [INFO]   [1] From: megh2850@gmail.com | Subject: Complaint for the damage device
+2026-04-18 23:43:15,844 [INFO] Saved 1 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
+2026-04-18 23:43:15,844 [INFO] Done.
+2026-04-19 00:20:15,089 [ERROR] Missing EMAIL or PASSWORD environment variables.
+2026-04-19 00:20:15,089 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
+2026-04-19 00:20:17,135 [ERROR] Missing EMAIL or PASSWORD environment variables.
+2026-04-19 00:20:17,135 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"
+2026-04-19 00:20:17,928 [ERROR] Missing EMAIL or PASSWORD environment variables.
+2026-04-19 00:20:17,928 [ERROR] Set them with: export EMAIL="you@gmail.com" PASSWORD="your-app-password"

@@ -1,7 +1,12 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 import os
 import re
+import json
+import sqlite3
+import pickle
+from datetime import datetime, timedelta
+import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -9,7 +14,79 @@ from collections import Counter
 
 app = Flask(__name__, static_folder='../fixera-frontend', static_url_path='')
 CORS(app)
-DATASET_PATH = os.path.join(os.path.dirname(__file__), '..', 'TS-PS14.csv')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_PATH = os.path.join(os.path.dirname(__file__), '..', 'SelfData.csv')
+DB_PATH = os.path.join(BASE_DIR, 'complaints.db')
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model.pkl')
+ML_VECTORIZER_PATH = os.path.join(os.path.dirname(__file__), 'ml_vectorizer.pkl')
+
+
+def get_db():
+    """Get a database connection (per-request)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Create complaints table if it doesn't exist."""
+    conn = get_db()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS complaints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            category TEXT,
+            priority TEXT,
+            sentiment TEXT,
+            confidence REAL,
+            reason TEXT,
+            action TEXT,
+            status TEXT DEFAULT 'Pending',
+            estimated_time TEXT,
+            timestamp TEXT,
+            updated_at TEXT,
+            sla_deadline TEXT
+        )
+    ''')
+    # Add columns if upgrading from old schema
+    try:
+        conn.execute('ALTER TABLE complaints ADD COLUMN updated_at TEXT')
+    except Exception:
+        pass
+    try:
+        conn.execute('ALTER TABLE complaints ADD COLUMN sla_deadline TEXT')
+    except Exception:
+        pass
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            total_complaints INTEGER DEFAULT 0,
+            high_count INTEGER DEFAULT 0,
+            medium_count INTEGER DEFAULT 0,
+            low_count INTEGER DEFAULT 0,
+            categories_json TEXT DEFAULT '{}',
+            sentiments_json TEXT DEFAULT '{}'
+        )
+    ''')
+    try:
+        conn.execute('ALTER TABLE reports ADD COLUMN categories_json TEXT DEFAULT \'{}\'')
+    except Exception:
+        pass
+    try:
+        conn.execute('ALTER TABLE reports ADD COLUMN sentiments_json TEXT DEFAULT \'{}\'')
+    except Exception:
+        pass
+    conn.commit()
+    conn.close()
+    # Create reports folder
+    reports_dir = os.path.join(BASE_DIR, 'reports')
+    os.makedirs(reports_dir, exist_ok=True)
+    print('[Fixera] Database initialized.')
+
+
+init_db()
 
 df = None
 tfidf_vectorizer = None
@@ -40,6 +117,50 @@ def load_dataset():
 
 
 load_dataset()
+
+# ---- ML Model Loading ----
+ml_model = None
+ml_vectorizer = None
+
+def load_ml_model():
+    """Load the trained ML model and its TF-IDF vectorizer."""
+    global ml_model, ml_vectorizer
+    try:
+        with open(MODEL_PATH, 'rb') as f:
+            ml_model = pickle.load(f)
+        with open(ML_VECTORIZER_PATH, 'rb') as f:
+            ml_vectorizer = pickle.load(f)
+        print('[Fixera] ML model loaded successfully.')
+    except FileNotFoundError:
+        print('[Fixera] Warning: ML model files not found. Run train_model.py first.')
+    except Exception as e:
+        print(f'[Fixera] Warning: Could not load ML model — {e}')
+
+load_ml_model()
+
+def ml_preprocess(text):
+    """Preprocess text identically to training pipeline."""
+    text = str(text).lower()
+    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'\d+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def ml_predict_category(text):
+    """Predict category using trained ML model. Returns (category, confidence) or None."""
+    if ml_model is None or ml_vectorizer is None:
+        return None
+    try:
+        processed = ml_preprocess(text)
+        X = ml_vectorizer.transform([processed])
+        probas = ml_model.predict_proba(X)[0]
+        pred_idx = np.argmax(probas)
+        category = ml_model.classes_[pred_idx]
+        confidence = float(probas[pred_idx])
+        return {'category': category, 'confidence': confidence}
+    except Exception as e:
+        print(f'[Fixera] ML prediction error: {e}')
+        return None
 
 def find_similar_complaints(text, top_n=5):
     """Find top-N most similar complaints from dataset using TF-IDF cosine similarity."""
@@ -83,6 +204,52 @@ def dataset_consensus(matches):
         'avg_score': sum(m['score'] for m in matches) / len(matches),
     }
 
+
+def find_similar_past_actions(text, top_n=5, threshold=0.15):
+    """Find the most common action from similar past complaints stored in the DB."""
+    try:
+        conn = get_db()
+        rows = conn.execute('SELECT text, action FROM complaints').fetchall()
+        conn.close()
+
+        if len(rows) < 2:
+            return None
+
+        past_texts = [r['text'].lower().strip() for r in rows if r['action']]
+        past_actions = [r['action'] for r in rows if r['action']]
+
+        # Build a temporary TF-IDF over past complaints
+        vec = TfidfVectorizer(max_features=2000, stop_words='english')
+        past_matrix = vec.fit_transform(past_texts)
+        query_vec = vec.transform([text.lower().strip()])
+
+        scores = cosine_similarity(query_vec, past_matrix).flatten()
+        top_indices = scores.argsort()[-top_n:][::-1]
+
+        # Actions to ignore (generic/non-actionable)
+        ignore_actions = {'No immediate action required', 'No action required',
+                          'Resolve within standard process', 'Forward to support team'}
+
+        matched_actions = []
+        for idx in top_indices:
+            if scores[idx] >= threshold:
+                act = past_actions[idx]
+                # Strip ESCALATE prefix to check the core action
+                core = act.replace('ESCALATE: ', '').replace('ESCALATE:', '').split(' — ')[0].strip() if act else ''
+                if act and core not in ignore_actions:
+                    matched_actions.append(core)
+
+        if not matched_actions:
+            return None
+
+        action_counter = Counter(matched_actions)
+        best_action, count = action_counter.most_common(1)[0]
+        return {'action': best_action, 'count': count, 'total': len(matched_actions)}
+
+    except Exception as e:
+        print(f'[Fixera] Past action lookup error: {e}')
+        return None
+
 @app.route('/')
 def index():
     """Serve the frontend HTML page."""
@@ -93,6 +260,7 @@ def index():
 def predict():
     """Accept a complaint and return a hybrid (rule + dataset) analysis result."""
     data = request.get_json()
+    skip_save = data.get('skip_save', False) if data else False
 
     if not data or 'text' not in data:
         return jsonify({'error': 'Missing "text" field in request body'}), 400
@@ -103,6 +271,158 @@ def predict():
         return jsonify({'error': 'Complaint text cannot be empty'}), 400
 
     text_lower = complaint_text.lower()
+
+    # ---- General negation handling (must run BEFORE synonym normalization) ----
+    # Positive words that flip to negative when preceded by negation
+    _pos_to_neg = {
+        'good': 'bad', 'great': 'bad', 'excellent': 'bad', 'amazing': 'bad',
+        'nice': 'bad', 'wonderful': 'bad', 'fantastic': 'bad', 'perfect': 'bad',
+        'useful': 'useless', 'helpful': 'useless',
+        'satisfied': 'unhappy', 'happy': 'unhappy',
+        'working': 'broken', 'functioning': 'broken', 'usable': 'broken',
+        'responding': 'broken', 'operational': 'broken',
+        'acceptable': 'terrible', 'recommended': 'bad',
+        'received': 'missing', 'delivered': 'missing',
+    }
+    # Negative words that flip to positive when preceded by negation
+    _neg_to_pos = {
+        'bad': 'good', 'terrible': 'okay', 'worst': 'okay', 'horrible': 'okay',
+    }
+    _negation_words = {'not', 'no', 'never', "n't", 'nt'}
+
+    # Tokenize, apply negation window (next 3 words after negation)
+    words = text_lower.split()
+    i = 0
+    while i < len(words):
+        word_clean = words[i].strip('.,!?;:')
+
+        # Check if this is a negation word or ends with n't
+        is_neg = word_clean in _negation_words or word_clean.endswith("n't")
+
+        if is_neg:
+            # Look ahead up to 3 words for a word to flip
+            for j in range(i + 1, min(i + 4, len(words))):
+                target = words[j].strip('.,!?;:')
+                if target in _pos_to_neg:
+                    words[j] = _pos_to_neg[target]
+                    words[i] = ''  # Remove the negation word
+                    break
+                elif target in _neg_to_pos:
+                    words[j] = _neg_to_pos[target]
+                    words[i] = ''  # Remove the negation word
+                    break
+        i += 1
+
+    text_lower = ' '.join(w for w in words if w).strip()
+
+    # Sentence-level negation: if negation + complaint keyword both present, inject 'bad'
+    _complaint_kw = {'working', 'functioning', 'usable', 'responding', 'operational'}
+    has_negation = any(n in text_lower.split() for n in _negation_words)
+    has_complaint_kw = any(k in text_lower for k in _complaint_kw)
+    if has_negation and has_complaint_kw and 'bad' not in text_lower:
+        text_lower = 'bad ' + text_lower
+
+
+    # ---- Synonym normalization (helps ML + rule matching) ----
+    _synonyms = [
+        ('stopped functioning', 'broken'),
+        ('stopped working', 'broken'),
+        ('malfunction', 'broken'),
+        ("isn't working", 'broken'),
+        ("doesn't work", 'broken'),
+        ("does not work", 'broken'),
+        ("did not work", 'broken'),
+        ('failed', 'broken'),
+        ('faulty', 'defective'),
+        ('arrived late', 'late delivery'),
+        ('delayed', 'late delivery'),
+        ('took too long', 'late delivery'),
+        ('no response', 'bad service'),
+        ('ignored', 'bad service'),
+        ('never received', 'missing delivery'),
+        ('torn', 'damaged'),
+        ('crushed', 'damaged'),
+        ('ripped', 'damaged'),
+        ('cracked', 'broken'),
+    ]
+    for old, new in _synonyms:
+        text_lower = text_lower.replace(old, new)
+
+    # =========================================================
+    # NON-COMPLAINT DETECTION LAYER
+    # Filters gibberish, random text, and irrelevant input
+    # =========================================================
+    is_invalid = False
+    invalid_reason = ''
+
+    # Check 1: Too short
+    if len(complaint_text) < 5:
+        is_invalid = True
+        invalid_reason = 'Input too short to be a valid complaint'
+
+    # Check 2: No meaningful words (no vowels = likely gibberish)
+    if not is_invalid:
+        vowel_count = sum(1 for c in text_lower if c in 'aeiou')
+        alpha_count = sum(1 for c in text_lower if c.isalpha())
+        if alpha_count < 3 or (alpha_count > 0 and vowel_count / alpha_count < 0.1):
+            is_invalid = True
+            invalid_reason = 'Input appears to be random characters or gibberish'
+
+    # Check 3: ML confidence too low + no similarity match
+    # But skip if text contains recognized complaint/sentiment words (from negation resolution)
+    _known_complaint_words = {'bad', 'broken', 'unhappy', 'useless', 'terrible', 'damaged',
+                              'defective', 'missing', 'worst', 'horrible', 'angry', 'leak',
+                              'late', 'delay', 'unsafe', 'danger'}
+    has_known_words = any(w in text_lower.split() for w in _known_complaint_words)
+
+    if not is_invalid and not has_known_words:
+        _ml_check = ml_predict_category(text_lower)
+        _sim_check = find_similar_complaints(text_lower)
+        _ds_check = dataset_consensus(_sim_check) if _sim_check else None
+
+        ml_conf = _ml_check['confidence'] if _ml_check else 0
+        sim_score = _ds_check['avg_score'] if _ds_check else 0
+
+        if ml_conf < 0.50 and sim_score < 0.40:
+            is_invalid = True
+            invalid_reason = f'Low ML confidence ({ml_conf:.0%}) and weak similarity ({sim_score:.0%})'
+
+    if is_invalid:
+        now = datetime.now().isoformat()
+        result = {
+            'category': 'Non-Complaint',
+            'priority': 'None',
+            'sentiment': 'Neutral',
+            'confidence': 0.0,
+            'reason': f'Input not recognized as a valid complaint. {invalid_reason}. Post-processed for consistency using rule validation layer',
+            'action': 'No action required',
+            'status': 'Ignored',
+            'estimated_time': 'N/A',
+        }
+
+        # Save to DB as ignored (skip when called from report generator)
+        if not skip_save:
+            try:
+                conn = get_db()
+                cur = conn.execute(
+                    '''INSERT INTO complaints
+                       (text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (complaint_text, 'Non-Complaint', 'None', 'Neutral', 0.0,
+                     result['reason'], 'No action required', 'Ignored', 'N/A',
+                     now, now, None)
+                )
+                result['complaint_id'] = cur.lastrowid
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f'[Fixera] DB write error: {e}')
+
+        return jsonify(result)
+
+    # =========================================================
+    # END NON-COMPLAINT DETECTION
+    # =========================================================
 
     category_rules = {
         'Product':   ['broken', 'damaged', 'defective'],
@@ -122,7 +442,7 @@ def predict():
             break
 
 
-    negative_words = ['bad', 'worst', 'angry', 'terrible', 'not happy', 'unhappy', 'horrible']
+    negative_words = ['bad', 'worst', 'angry', 'terrible', 'not happy', 'unhappy', 'horrible','damaged']
     positive_words = ['good', 'great', 'thank', 'happy']
 
     rule_sentiment = 'Neutral'
@@ -151,17 +471,26 @@ def predict():
     else:
         rule_priority = 'Low'
 
-    matches = find_similar_complaints(complaint_text)
+    matches = find_similar_complaints(text_lower)
     ds = dataset_consensus(matches) if matches else None
+
+    # --- ML Model Prediction (primary classifier) ---
+    ml_result = ml_predict_category(text_lower)
 
     reason_parts = []
 
-    if rule_category != 'Other':
-
+    # Hybrid category: ML (high confidence) > rules > dataset > Other
+    if ml_result and ml_result['confidence'] >= 0.6:
+        category = ml_result['category']
+        reason_parts.append(f'ML model prediction ({ml_result["confidence"]:.0%} confidence)')
+    elif rule_category != 'Other':
         category = rule_category
     elif ds:
-
         category = ds['category']
+    elif ml_result:
+        # Low-confidence ML is still better than "Other"
+        category = ml_result['category']
+        reason_parts.append(f'ML model prediction (low confidence: {ml_result["confidence"]:.0%})')
     else:
         category = 'Other'
 
@@ -224,6 +553,10 @@ def predict():
         else:
             confidence = 0.5
 
+    # If ML model was primary, use its confidence as dominant signal
+    if ml_result and ml_result['confidence'] >= 0.6:
+        confidence = max(confidence, ml_result['confidence'])
+
 
     if risk_level == 'High' and confidence < 0.9:
         confidence = min(confidence + 0.1, 0.95)
@@ -241,29 +574,96 @@ def predict():
     for insight in insight_parts:
         reason_parts.append(insight)
 
-    if not reason_parts:
-        reason = 'No specific keywords detected. Standard issue'
-    else:
-        reason = '. '.join(reason_parts)
-
-
+    # --- Recommendation (adaptive + rule fallback) ---
     action_map = {
         'Product':   'Offer replacement or refund',
         'Delivery':  'Apologize and expedite shipment',
         'Packaging': 'Check packaging process and resend item',
         'Trade':     'Connect with trade support specialist',
     }
-    action = action_map.get(category, 'Forward to support team')
+    rule_action = action_map.get(category, 'Forward to support team')
+
+    # Try adaptive recommendation from past complaints
+    past = find_similar_past_actions(text_lower)
+    if past and past['count'] >= 2:
+        action = past['action']
+        reason_parts.append(f'Recommendation derived from {past["total"]} similar past complaint resolutions')
+    elif past:
+        action = past['action']
+        reason_parts.append('Recommendation informed by past complaint history')
+    else:
+        action = rule_action
 
     if risk_level == 'High':
-        action = 'ESCALATE: ' + action + ' — flag for immediate review'
+        action = action + ' — escalate for urgent handling'
 
+    # --- Assemble final reason ---
+    if not reason_parts:
+        reason = 'No specific keywords detected. Standard issue'
+    else:
+        reason = '. '.join(reason_parts)
 
-    if risk_level == 'High':
+    # =========================================================
+    # POST-PROCESSING VALIDATION LAYER
+    # Ensures logical consistency between all output fields
+    # =========================================================
+
+    # Step 1: Fix sentiment based on text keywords
+    neg_indicators = ['broken', 'defective', 'damaged', 'stopped', 'not working',
+                      'unusable', 'late', 'delay', 'worst', 'terrible', 'horrible',
+                      'unsafe', 'hazard', 'danger', 'exploded', 'leak', 'angry', 'unhappy',
+                      'useless', 'bad', 'missing']
+    pos_indicators = ['great', 'good', 'excellent', 'happy', 'satisfied', 'okay']
+
+    has_neg = any(w in text_lower for w in neg_indicators)
+    has_pos = any(w in text_lower for w in pos_indicators)
+
+    if has_neg:
+        sentiment = 'Negative'
+    elif has_pos:
+        sentiment = 'Positive'
+    else:
+        # Keep existing sentiment if no strong signal
+        pass
+
+    # Step 2: Fix category via strong keyword correction
+    if any(w in text_lower for w in ['product', 'broken', 'defective', 'stopped', 'not working']):
+        category = 'Product'
+    elif any(w in text_lower for w in ['packaging', 'box', 'seal', 'leak', 'package']):
+        category = 'Packaging'
+    elif any(w in text_lower for w in ['delivery', 'late', 'delay', 'shipment', 'shipping']):
+        category = 'Delivery'
+    # else: keep ML/existing category
+
+    # Step 3: Fix priority logic
+    critical_words = ['danger', 'unsafe', 'exploded', 'health', 'leak', 'hazard']
+    has_critical = any(w in text_lower for w in critical_words)
+
+    if has_critical:
+        priority = 'High'
+    elif sentiment == 'Negative':
+        priority = 'Medium' if priority == 'Low' else priority  # at least Medium
+    elif sentiment == 'Positive':
+        priority = 'Low'
+
+    # Step 4: Fix action consistency (preserve data-driven actions)
+    if priority == 'High' and '— escalate' not in action:
+        action = action + ' — escalate for urgent handling'
+    elif priority == 'Low' and '— escalate' in action:
+        # Remove escalation note for low-priority
+        action = action.split(' — escalate')[0].strip()
+
+    reason += '. Post-processed for consistency using rule validation layer'
+
+    # =========================================================
+    # END VALIDATION LAYER
+    # =========================================================
+
+    if risk_level == 'High' or priority == 'High':
         estimated_time = '12 hours'
     else:
         time_map = {'High': '24 hours', 'Medium': '48 hours', 'Low': '72 hours'}
-        estimated_time = time_map[priority]
+        estimated_time = time_map.get(priority, '48 hours')
 
 
     result = {
@@ -277,8 +677,568 @@ def predict():
         'estimated_time': estimated_time,
     }
 
+    # SLA deadline calculation
+    now = datetime.now()
+    sla_map = {'High': 12, 'Medium': 48, 'Low': 72}
+    sla_hours = sla_map.get(priority, 48)
+    sla_deadline = (now + timedelta(hours=sla_hours)).isoformat()
+    now_str = now.isoformat()
+
+    # Save to database (skip when called from report generator)
+    if not skip_save:
+        try:
+            conn = get_db()
+            cur = conn.execute(
+                '''INSERT INTO complaints
+                   (text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (complaint_text, category, priority, sentiment, confidence,
+                 reason, action, 'Pending', estimated_time,
+                 now_str, now_str, sla_deadline)
+            )
+            result['complaint_id'] = cur.lastrowid
+            result['sla_deadline'] = sla_deadline
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f'[Fixera] DB write error: {e}')
+
     return jsonify(result)
 
 
+@app.route('/complaints', methods=['GET'])
+def get_complaints():
+    """Return all stored complaints, newest first, with overdue flag."""
+    conn = get_db()
+    rows = conn.execute(
+        'SELECT id, text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline '
+        'FROM complaints ORDER BY id DESC'
+    ).fetchall()
+    conn.close()
+
+    now = datetime.now()
+    complaints = []
+    for r in rows:
+        item = {
+            'id': r['id'],
+            'text': r['text'],
+            'category': r['category'],
+            'priority': r['priority'],
+            'sentiment': r['sentiment'],
+            'confidence': r['confidence'],
+            'reason': r['reason'],
+            'action': r['action'],
+            'status': r['status'],
+            'estimated_time': r['estimated_time'],
+            'timestamp': r['timestamp'],
+            'updated_at': r['updated_at'],
+            'sla_deadline': r['sla_deadline'],
+            'overdue': False,
+        }
+
+        # Check SLA overdue
+        if r['sla_deadline'] and r['status'] != 'Resolved':
+            try:
+                deadline = datetime.fromisoformat(r['sla_deadline'])
+                if now > deadline:
+                    item['overdue'] = True
+            except Exception:
+                pass
+
+        complaints.append(item)
+
+    return jsonify(complaints)
+
+
+@app.route('/update_status', methods=['POST'])
+def update_status():
+    """Update the status of a complaint by ID."""
+    data = request.get_json()
+
+    if not data or 'id' not in data or 'status' not in data:
+        return jsonify({'error': 'Missing "id" or "status" field'}), 400
+
+    valid_statuses = ['Pending', 'In Progress', 'Resolved', 'Ignored']
+    if data['status'] not in valid_statuses:
+        return jsonify({'error': f'Invalid status. Must be one of: {valid_statuses}'}), 400
+
+    try:
+        conn = get_db()
+        cur = conn.execute(
+            'UPDATE complaints SET status = ?, updated_at = ? WHERE id = ?',
+            (data['status'], datetime.now().isoformat(), data['id'])
+        )
+        conn.commit()
+
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'Complaint not found'}), 404
+
+        conn.close()
+        return jsonify({'success': True, 'id': data['id'], 'status': data['status']})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/stats', methods=['GET'])
+def get_stats():
+    """Return aggregated complaint statistics with lifecycle insights."""
+    conn = get_db()
+
+    total = conn.execute('SELECT COUNT(*) FROM complaints').fetchone()[0]
+
+    cat_rows = conn.execute(
+        'SELECT category, COUNT(*) as cnt FROM complaints GROUP BY category'
+    ).fetchall()
+    by_category = {r['category']: r['cnt'] for r in cat_rows}
+
+    pri_rows = conn.execute(
+        'SELECT priority, COUNT(*) as cnt FROM complaints GROUP BY priority'
+    ).fetchall()
+    by_priority = {r['priority']: r['cnt'] for r in pri_rows}
+
+    sent_rows = conn.execute(
+        'SELECT sentiment, COUNT(*) as cnt FROM complaints GROUP BY sentiment'
+    ).fetchall()
+    by_sentiment = {r['sentiment']: r['cnt'] for r in sent_rows}
+
+    # Lifecycle stats
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM complaints WHERE status = 'Pending'"
+    ).fetchone()[0]
+
+    overdue = 0
+    now_str = datetime.now().isoformat()
+    sla_rows = conn.execute(
+        "SELECT sla_deadline FROM complaints WHERE status != 'Resolved' AND sla_deadline IS NOT NULL"
+    ).fetchall()
+    for r in sla_rows:
+        try:
+            if datetime.fromisoformat(r['sla_deadline']) < datetime.now():
+                overdue += 1
+        except Exception:
+            pass
+
+    # Also include report history totals
+    try:
+        rpt_rows = conn.execute(
+            'SELECT COALESCE(SUM(total_complaints),0) as t, COALESCE(SUM(high_count),0) as h, '
+            'COALESCE(SUM(medium_count),0) as m, COALESCE(SUM(low_count),0) as l FROM reports'
+        ).fetchone()
+        report_total = rpt_rows['t']
+        report_high = rpt_rows['h']
+        report_medium = rpt_rows['m']
+        report_low = rpt_rows['l']
+    except Exception:
+        report_total = report_high = report_medium = report_low = 0
+
+    # Aggregate categories from reports
+    report_categories = {}
+    try:
+        cat_json_rows = conn.execute('SELECT categories_json FROM reports WHERE categories_json IS NOT NULL').fetchall()
+        for row in cat_json_rows:
+            try:
+                cats = json.loads(row['categories_json'])
+                for k, v in cats.items():
+                    report_categories[k] = report_categories.get(k, 0) + v
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Aggregate sentiments from reports
+    report_sentiments = {}
+    try:
+        sent_json_rows = conn.execute('SELECT sentiments_json FROM reports WHERE sentiments_json IS NOT NULL').fetchall()
+        for row in sent_json_rows:
+            try:
+                sents = json.loads(row['sentiments_json'])
+                for k, v in sents.items():
+                    report_sentiments[k] = report_sentiments.get(k, 0) + v
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    conn.close()
+
+    # Combined stats: complaints + reports
+    combined_total = total + report_total
+    combined_high = by_priority.get('High', 0) + report_high
+    combined_medium = by_priority.get('Medium', 0) + report_medium
+    combined_low = by_priority.get('Low', 0) + report_low
+
+    # Merge categories from complaints + reports
+    combined_categories = dict(by_category)
+    for k, v in report_categories.items():
+        combined_categories[k] = combined_categories.get(k, 0) + v
+
+    # Merge sentiments from complaints + reports
+    combined_sentiments = dict(by_sentiment)
+    for k, v in report_sentiments.items():
+        combined_sentiments[k] = combined_sentiments.get(k, 0) + v
+
+    return jsonify({
+        'total': combined_total,
+        'by_category': combined_categories,
+        'by_priority': {
+            'High': combined_high,
+            'Medium': combined_medium,
+            'Low': combined_low,
+        },
+        'by_sentiment': combined_sentiments,
+        'pending': pending,
+        'overdue': overdue,
+        'from_reports': report_total,
+        'from_history': total,
+    })
+
+
+@app.route('/generate_report', methods=['POST'])
+def generate_report():
+    """Generate a PDF report from uploaded CSV or complaints.csv."""
+    import csv as csv_mod
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    csv_path = os.path.join(BASE_DIR, 'complaints.csv')
+    rows = []
+    has_file = 'file' in request.files and request.files['file'].filename
+    use_email = request.form.get('use_email_data') == 'true'
+
+    # Strict validation: must have file OR explicit email flag
+    if not has_file and not use_email:
+        return jsonify({'error': 'No input provided. Please upload a CSV file or use email data.'}), 400
+
+    # Read data from the correct source
+    if has_file:
+        uploaded = request.files['file']
+        try:
+            content = uploaded.read().decode('utf-8', errors='ignore')
+            reader = csv_mod.DictReader(content.splitlines())
+            rows = list(reader)
+        except Exception as e:
+            return jsonify({'error': f'CSV parse error: {str(e)}'}), 400
+    elif use_email:
+        if not os.path.exists(csv_path):
+            return jsonify({'error': 'No complaints.csv found. Fetch emails first.'}), 404
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv_mod.DictReader(f)
+                rows = list(reader)
+        except Exception as e:
+            return jsonify({'error': f'CSV read error: {str(e)}'}), 500
+
+    if not rows:
+        return jsonify({'error': 'CSV file is empty — no data to generate report.'}), 400
+
+    # Analyze each complaint
+    results = []
+    categories = {}
+    priorities = {}
+    sentiments = {}
+    high_risk = 0
+
+    for row in rows:
+        text = row.get('description') or row.get('text') or row.get('subject', '')
+        name = row.get('name') or row.get('email', 'Unknown')
+        if not text or len(text.strip()) < 3:
+            continue
+
+        try:
+            with app.test_client() as client:
+                resp = client.post('/predict', json={'text': text.strip(), 'skip_save': True})
+                if resp.status_code == 200:
+                    data = resp.get_json()
+                    cat = data.get('category', 'Other')
+                    pri = data.get('priority', 'Low')
+                    sen = data.get('sentiment', 'Neutral')
+                    act = data.get('action', '—')
+
+                    categories[cat] = categories.get(cat, 0) + 1
+                    priorities[pri] = priorities.get(pri, 0) + 1
+                    sentiments[sen] = sentiments.get(sen, 0) + 1
+                    if pri == 'High':
+                        high_risk += 1
+
+                    results.append({
+                        'name': name[:30],
+                        'text': text[:80],
+                        'category': cat,
+                        'priority': pri,
+                        'action': act[:50],
+                    })
+        except Exception:
+            continue
+
+    if not results:
+        return jsonify({'error': 'No valid complaints found in the CSV.'}), 400
+
+    # ---- Generate PDF ----
+    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'Fixera_Report_{timestamp_str}.pdf'
+    reports_dir = os.path.join(BASE_DIR, 'reports')
+    os.makedirs(reports_dir, exist_ok=True)
+    report_path = os.path.join(reports_dir, filename)
+
+    doc = SimpleDocTemplate(report_path, pagesize=A4,
+                            topMargin=40, bottomMargin=40,
+                            leftMargin=42, rightMargin=42)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # --- Custom styles ---
+    DARK = colors.HexColor('#1e293b')
+    BLUE = colors.HexColor('#2563eb')
+    GRAY_BG = colors.HexColor('#f8fafc')
+    LIGHT_BG = colors.HexColor('#f1f5f9')
+    BORDER = colors.HexColor('#e2e8f0')
+    WHITE = colors.white
+
+    s_title = ParagraphStyle('RptTitle', parent=styles['Title'],
+        fontSize=24, leading=30, alignment=1, spaceAfter=4,
+        textColor=DARK, fontName='Helvetica-Bold')
+    s_subtitle = ParagraphStyle('RptSub', parent=styles['Normal'],
+        fontSize=10, alignment=1, textColor=colors.HexColor('#64748b'),
+        spaceAfter=4)
+    s_heading = ParagraphStyle('RptH2', parent=styles['Heading2'],
+        fontSize=13, leading=18, textColor=BLUE, spaceBefore=18,
+        spaceAfter=8, fontName='Helvetica-Bold')
+    s_body = ParagraphStyle('RptBody', parent=styles['Normal'],
+        fontSize=9.5, leading=13, textColor=DARK)
+    s_bullet = ParagraphStyle('RptBullet', parent=styles['Normal'],
+        fontSize=10, leading=15, textColor=DARK, leftIndent=12,
+        spaceBefore=3, spaceAfter=3)
+    s_cell = ParagraphStyle('RptCell', parent=styles['Normal'],
+        fontSize=8, leading=11, textColor=DARK)
+    s_cell_head = ParagraphStyle('RptCellH', parent=styles['Normal'],
+        fontSize=8.5, leading=11, textColor=WHITE, fontName='Helvetica-Bold')
+
+    pw = A4[0] - 84  # page width minus margins
+
+    # ===================== HEADER =====================
+    story.append(Paragraph('Fixera Complaint Analysis Report', s_title))
+    story.append(Paragraph(
+        f'Generated on {datetime.now().strftime("%B %d, %Y at %H:%M")}',
+        s_subtitle))
+
+    # Horizontal rule
+    from reportlab.platypus import HRFlowable
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width='100%', thickness=1, color=BORDER, spaceAfter=14))
+
+    # ===================== 1. SUMMARY =====================
+    story.append(Paragraph('1. Summary', s_heading))
+
+    summary_header = [
+        Paragraph('<b>Metric</b>', s_cell_head),
+        Paragraph('<b>Count</b>', s_cell_head),
+    ]
+    summary_rows = [
+        ['Total Complaints', str(len(results))],
+        ['High Priority', str(priorities.get('High', 0))],
+        ['Medium Priority', str(priorities.get('Medium', 0))],
+        ['Low Priority', str(priorities.get('Low', 0))],
+        ['High Risk', str(high_risk)],
+    ]
+    for cat_name, cnt in categories.items():
+        summary_rows.append([f'Category: {cat_name}', str(cnt)])
+
+    summary_data = [summary_header]
+    for row in summary_rows:
+        summary_data.append([
+            Paragraph(row[0], s_cell),
+            Paragraph(row[1], s_cell),
+        ])
+
+    summary_table = Table(summary_data, colWidths=[pw * 0.6, pw * 0.4])
+    summary_table.setStyle(TableStyle([
+        # Header row
+        ('BACKGROUND', (0, 0), (-1, 0), BLUE),
+        ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+        # Data rows
+        ('BACKGROUND', (0, 1), (-1, -1), GRAY_BG),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, GRAY_BG]),
+        # Padding & borders
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # Round top corners effect via line
+        ('LINEABOVE', (0, 0), (-1, 0), 1.5, BLUE),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 20))
+
+    # Sort complaints: High first, then Medium, then Low
+    _priority_order = {'High': 1, 'Medium': 2, 'Low': 3}
+    results.sort(key=lambda x: _priority_order.get(x.get('priority', ''), 4))
+
+    # ===================== 2. COMPLAINT DETAILS =====================
+    story.append(Paragraph('2. Complaint Details', s_heading))
+
+    # Build header row with styled Paragraphs
+    detail_header = [
+        Paragraph('<b>Customer</b>', s_cell_head),
+        Paragraph('<b>Complaint</b>', s_cell_head),
+        Paragraph('<b>Category</b>', s_cell_head),
+        Paragraph('<b>Priority</b>', s_cell_head),
+        Paragraph('<b>Recommendation</b>', s_cell_head),
+    ]
+
+    # Build data rows with Paragraph wrapping for long text
+    detail_data = [detail_header]
+    for r in results:
+        complaint_text = r['text'][:80]
+        if len(r['text']) > 80:
+            complaint_text += '...'
+        action_text = r['action'][:50]
+        if len(r['action']) > 50:
+            action_text += '...'
+
+        detail_data.append([
+            Paragraph(r['name'], s_cell),
+            Paragraph(complaint_text, s_cell),
+            Paragraph(r['category'], s_cell),
+            Paragraph(f"<b>{r['priority']}</b>", s_cell),
+            Paragraph(action_text, s_cell),
+        ])
+
+    col_w = [pw*0.15, pw*0.30, pw*0.12, pw*0.10, pw*0.33]
+    detail_table = Table(detail_data, colWidths=col_w, repeatRows=1)
+    detail_table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), BLUE),
+        ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+        ('LINEABOVE', (0, 0), (-1, 0), 1.5, BLUE),
+        # Data rows
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_BG]),
+        # Padding
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        # Borders
+        ('GRID', (0, 0), (-1, -1), 0.4, BORDER),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, BLUE),
+        # Alignment
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(detail_table)
+    story.append(Spacer(1, 24))
+
+    # ===================== 3. KEY INSIGHTS =====================
+    story.append(Paragraph('3. Key Insights', s_heading))
+    story.append(Spacer(1, 4))
+
+    if categories:
+        top_cat = max(categories, key=categories.get)
+        story.append(Paragraph(
+            f'<bullet>&bull;</bullet> Most common issue: <b>{top_cat}</b> ({categories[top_cat]} complaints)',
+            s_bullet))
+    story.append(Paragraph(
+        f'<bullet>&bull;</bullet> High-risk complaints requiring immediate action: <b>{high_risk}</b>',
+        s_bullet))
+    neg_count = sentiments.get('Negative', 0)
+    pos_count = sentiments.get('Positive', 0)
+    story.append(Paragraph(
+        f'<bullet>&bull;</bullet> Sentiment breakdown: <b>{neg_count}</b> negative, '
+        f'<b>{pos_count}</b> positive out of {len(results)} total',
+        s_bullet))
+    if high_risk > 0:
+        story.append(Paragraph(
+            f'<bullet>&bull;</bullet> <font color="#dc2626">⚠ {high_risk} complaint(s) flagged as high priority '
+            f'— recommend immediate escalation</font>',
+            s_bullet))
+
+    story.append(Spacer(1, 20))
+
+    # Footer rule
+    story.append(HRFlowable(width='100%', thickness=0.5, color=BORDER, spaceBefore=10))
+    story.append(Paragraph(
+        f'<font size="8" color="#94a3b8">Report generated by Fixera AI • {datetime.now().strftime("%Y-%m-%d %H:%M")}</font>',
+        ParagraphStyle('Footer', parent=styles['Normal'], alignment=1, spaceBefore=6)))
+
+    # Build PDF
+    doc.build(story)
+
+    # Save to database
+    try:
+        conn = get_db()
+        conn.execute(
+            'INSERT INTO reports (filename, created_at, total_complaints, high_count, medium_count, low_count, categories_json, sentiments_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (filename, datetime.now().isoformat(), len(results),
+             priorities.get('High', 0), priorities.get('Medium', 0), priorities.get('Low', 0),
+             json.dumps(categories), json.dumps(sentiments))
+        )
+        conn.commit()
+        report_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        conn.close()
+    except Exception as e:
+        print(f'[Fixera] Report DB save error: {e}')
+        report_id = None
+
+    return jsonify({
+        'success': True,
+        'total': len(results),
+        'high': priorities.get('High', 0),
+        'medium': priorities.get('Medium', 0),
+        'low': priorities.get('Low', 0),
+        'report_id': report_id,
+        'filename': filename,
+        'file': f'/download_report/{report_id}' if report_id else '/download_report/latest',
+        'message': f'Report generated with {len(results)} complaints.',
+    })
+
+
+@app.route('/download_report/<report_id>', methods=['GET'])
+def download_report(report_id):
+    """Download a specific report by ID or 'latest'."""
+    reports_dir = os.path.join(BASE_DIR, 'reports')
+
+    if report_id == 'latest':
+        # Find most recent file in reports/
+        files = sorted([f for f in os.listdir(reports_dir) if f.endswith('.pdf')], reverse=True)
+        if not files:
+            return jsonify({'error': 'No reports found.'}), 404
+        filepath = os.path.join(reports_dir, files[0])
+        return send_file(filepath, as_attachment=True, download_name=files[0])
+
+    try:
+        conn = get_db()
+        row = conn.execute('SELECT filename FROM reports WHERE id = ?', (int(report_id),)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Report not found.'}), 404
+        filepath = os.path.join(reports_dir, row['filename'])
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'Report file missing.'}), 404
+        return send_file(filepath, as_attachment=True, download_name=row['filename'])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/report_history', methods=['GET'])
+def report_history():
+    """Return list of previously generated reports."""
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            'SELECT id, filename, created_at, total_complaints, high_count, medium_count, low_count FROM reports ORDER BY id DESC LIMIT 50'
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)
