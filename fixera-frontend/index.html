@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Fixera — AI-powered complaint analyzer. Paste a customer complaint and get instant category, priority, and sentiment analysis." />
+  <title>Fixera — Complaint Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <!-- Header -->
+    <header class="header" id="header">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <h1>Fixera</h1>
+      </div>
+      <p class="tagline">Instant complaint analysis at your fingertips</p>
+    </header>
+
+    <!-- Input Card -->
+    <section class="card input-card" id="input-section">
+      <label for="complaint-input" class="input-label">Describe the complaint</label>
+      <textarea
+        id="complaint-input"
+        placeholder="e.g. My order arrived broken and customer service was unhelpful…"
+        rows="5"
+      ></textarea>
+      <button id="analyze-btn" type="button">
+        <span class="btn-text">Analyze</span>
+        <span class="btn-loader hidden" id="btn-loader"></span>
+      </button>
+    </section>
+
+    <!-- Error message -->
+    <p class="error-msg hidden" id="error-msg"></p>
+
+    <!-- Results Card -->
+    <section class="card results-card hidden" id="results-section">
+      <h2 class="results-title">Analysis Results</h2>
+      <div class="results-grid" id="results-grid">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
