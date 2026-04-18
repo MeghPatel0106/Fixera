@@ -45,7 +45,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 body {
@@ -375,9 +375,35 @@ body {
    ============================================================= */
 .analyze-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 28px;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* Card enhancements for analyze view */
+#input-section {
+  display: flex;
+  flex-direction: column;
+}
+
+#results-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.result-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  padding: 40px 20px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1.5px dashed var(--border);
+  margin-top: 8px;
 }
 
 /* =============================================================
@@ -386,22 +412,23 @@ body {
 .field-label {
   display: block;
   font-weight: 600;
-  font-size: .75rem;
+  font-size: .8rem;
   color: var(--text-sec);
-  margin-bottom: 6px;
-  margin-top: 14px;
+  margin-bottom: 8px;
+  margin-top: 16px;
 }
 
 textarea {
   width: 100%;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
   color: var(--text);
   font-family: var(--font);
-  font-size: .8125rem;
+  font-size: .875rem;
   resize: vertical;
+  min-height: 120px;
   line-height: 1.55;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -455,27 +482,32 @@ textarea:focus {
   background: rgba(37, 99, 235, .04);
 }
 
-/* Button */
 #analyze-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 10px;
+  padding: 13px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   background: var(--primary);
   color: #fff;
   font-family: var(--font);
-  font-size: .8125rem;
+  font-size: .9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background .15s;
+  margin-top: 8px;
+  transition: background .15s, transform .1s;
 }
 
 #analyze-btn:hover {
   background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+#analyze-btn:active {
+  transform: translateY(0);
 }
 
 #analyze-btn:disabled {
@@ -527,14 +559,14 @@ textarea:focus {
 .result-summary-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
 .summary-item {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  border-radius: 10px;
+  padding: 12px 14px;
 }
 
 .summary-label {
