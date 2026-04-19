@@ -99,7 +99,12 @@ def init_db():
     except Exception:
         pass
     try:
-        conn.execute('ALTER TABLE reports ADD COLUMN sentiments_json TEXT DEFAULT \'{}\'')
+        conn.execute('ALTER TABLE reports ADD COLUMN sentiments_json TEXT DEFAULT \'{}\'')  
+    except Exception:
+        pass
+    # Add is_hidden column for soft delete
+    try:
+        conn.execute('ALTER TABLE complaints ADD COLUMN is_hidden INTEGER DEFAULT 0')
     except Exception:
         pass
     conn.commit()
@@ -258,9 +263,16 @@ def find_similar_past_actions(text, top_n=5, threshold=0.15):
         for idx in top_indices:
             if scores[idx] >= threshold:
                 act = past_actions[idx]
-                # Strip ESCALATE prefix to check the core action
-                core = act.replace('ESCALATE: ', '').replace('ESCALATE:', '').split(' — ')[0].strip() if act else ''
-                if act and core not in ignore_actions:
+                # Strip all priority prefixes and suffixes to get clean core action
+                core = act if act else ''
+                core = re.sub(r'(URGENT:\s*)+', '', core)
+                core = re.sub(r'(ESCALATE:\s*)+', '', core)
+                core = core.split(' — ')[0].strip()
+                core = re.sub(r'(\s*Immediate action required\.)+', '', core)
+                core = re.sub(r'(\s*Ensure timely resolution\.)+', '', core)
+                core = re.sub(r'(\s*Monitor situation and improve service\.)+', '', core)
+                core = core.strip()
+                if core and core not in ignore_actions:
                     matched_actions.append(core)
 
         if not matched_actions:
@@ -451,6 +463,9 @@ def predict():
     # =========================================================
 
     category_rules = {
+        'Trade':     ['charge', 'charged', 'price', 'billing', 'bill', 'invoice', 'amount',
+                      'overcharged', 'extra cost', 'wrong price', 'overcharge', 'refund',
+                      'payment', 'money', 'cost', 'fee', 'discount', 'coupon', 'promo'],
         'Product':   ['broken', 'damaged', 'defective', 'not working', 'malfunction', 'faulty',
                       'battery', 'screen', 'cracked', 'overheating', 'draining', 'dead',
                       'stopped working', 'poor quality', 'does not work', 'not functioning',
@@ -903,6 +918,13 @@ def predict():
     else:
         action = rule_action
 
+    # Strip any existing priority prefixes/suffixes before re-appending
+    action = action.replace('URGENT: ', '').replace('URGENT:', '')
+    action = action.replace(' Immediate action required.', '').replace('Immediate action required.', '')
+    action = action.replace(' Ensure timely resolution.', '').replace('Ensure timely resolution.', '')
+    action = action.replace(' Monitor situation and improve service.', '').replace('Monitor situation and improve service.', '')
+    action = action.strip()
+
     # Priority layer
     if risk_level == 'High':
         action = 'URGENT: ' + action + ' Immediate action required.'
@@ -1002,12 +1024,24 @@ def predict():
     if not skip_save:
         try:
             conn = get_db()
+
+            # --- Repeat order_id escalation ---
+            if order_id and order_id != 'N/A':
+                count = conn.execute(
+                    'SELECT COUNT(*) FROM complaints WHERE order_id = ?', (order_id,)
+                ).fetchone()[0]
+                if count >= 1:  # This will be the 2nd+ occurrence
+                    priority = 'High'
+                    result['priority'] = 'High'
+                    reason_parts_extra = 'Repeat complaint detected for same order ID.'
+                    result['reason'] = result.get('reason', '') + ' ' + reason_parts_extra
+
             cur = conn.execute(
                 '''INSERT INTO complaints
                    (text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline, customer_name, order_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (complaint_text, category, priority, sentiment, confidence,
-                 reason, action, 'Pending', estimated_time,
+                 result.get('reason', reason), action, 'Pending', estimated_time,
                  now_str, now_str, sla_deadline, customer_name, order_id)
             )
             result['complaint_id'] = cur.lastrowid
@@ -1023,11 +1057,19 @@ def predict():
 @app.route('/complaints', methods=['GET'])
 def get_complaints():
     """Return all stored complaints, newest first, with overdue flag."""
+    # Check if request asks for hidden filter (History uses show_hidden=0)
+    show_hidden = request.args.get('show_hidden', '1')  # default: show all
     conn = get_db()
-    rows = conn.execute(
-        'SELECT id, text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline, customer_name, order_id '
-        'FROM complaints ORDER BY id DESC'
-    ).fetchall()
+    if show_hidden == '0':
+        rows = conn.execute(
+            'SELECT id, text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline, customer_name, order_id '
+            'FROM complaints WHERE is_hidden = 0 ORDER BY id DESC'
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            'SELECT id, text, category, priority, sentiment, confidence, reason, action, status, estimated_time, timestamp, updated_at, sla_deadline, customer_name, order_id '
+            'FROM complaints ORDER BY id DESC'
+        ).fetchall()
     conn.close()
 
     now = datetime.now()
@@ -1109,6 +1151,24 @@ STATUS_TRANSITIONS = {
 }
 
 
+@app.route('/hide_complaint', methods=['POST'])
+def hide_complaint():
+    """Soft-delete a complaint (hide from History only, keep in analytics)."""
+    data = request.get_json()
+    if not data or 'id' not in data:
+        return jsonify({'error': 'Missing complaint id'}), 400
+
+    complaint_id = data['id']
+    try:
+        conn = get_db()
+        conn.execute('UPDATE complaints SET is_hidden = 1 WHERE id = ?', (complaint_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': complaint_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/update_status', methods=['POST'])
 def update_status():
     """Update the status of a complaint with lifecycle validation and activity logging."""
@@ -1124,7 +1184,7 @@ def update_status():
 
     try:
         conn = get_db()
-        row = conn.execute('SELECT id, status, priority, timestamp FROM complaints WHERE id = ?', (data['id'],)).fetchone()
+        row = conn.execute('SELECT id, status, priority, timestamp, order_id FROM complaints WHERE id = ?', (data['id'],)).fetchone()
 
         if not row:
             conn.close()
@@ -1149,6 +1209,31 @@ def update_status():
                 'UPDATE complaints SET status = ?, updated_at = ?, resolved_at = ? WHERE id = ?',
                 (new_status, now_str, now_str, data['id'])
             )
+        elif new_status == 'Closed':
+            # Auto-hide from History when closed
+            conn.execute(
+                'UPDATE complaints SET status = ?, updated_at = ?, is_hidden = 1 WHERE id = ?',
+                (new_status, now_str, data['id'])
+            )
+
+            # CASCADE: Close ALL complaints with same order_id
+            order_id = row['order_id'] if 'order_id' in row.keys() else None
+            if order_id and order_id != 'N/A':
+                siblings = conn.execute(
+                    'SELECT id, status FROM complaints WHERE order_id = ? AND id != ? AND status != ?',
+                    (order_id, data['id'], 'Closed')
+                ).fetchall()
+                for sib in siblings:
+                    conn.execute(
+                        'UPDATE complaints SET status = ?, updated_at = ?, is_hidden = 1 WHERE id = ?',
+                        ('Closed', now_str, sib['id'])
+                    )
+                    conn.execute(
+                        'INSERT INTO activity_logs (complaint_id, old_status, new_status, changed_at) VALUES (?, ?, ?, ?)',
+                        (sib['id'], sib['status'], 'Closed', now_str)
+                    )
+                if siblings:
+                    warning = f'Auto-closed {len(siblings)} related complaint(s) with order ID {order_id}'
         else:
             conn.execute(
                 'UPDATE complaints SET status = ?, updated_at = ? WHERE id = ?',
@@ -1167,7 +1252,8 @@ def update_status():
                 created = datetime.fromisoformat(row['timestamp'])
                 diff_min = (datetime.now() - created).total_seconds() / 60
                 if diff_min < 10:
-                    warning = 'This complaint is being closed unusually quickly'
+                    w = 'This complaint is being closed unusually quickly'
+                    warning = (warning + '. ' + w) if warning else w
             except Exception:
                 pass
 

@@ -268,6 +268,26 @@ body {
   box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
 }
 
+/* Hide (soft delete) button */
+.hide-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.15s;
+}
+
+.hide-btn:hover {
+  opacity: 1;
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239,68,68,0.05);
+}
+
 /* Lifecycle section in history table */
 .lifecycle-header {
   background: #eef2ff !important;

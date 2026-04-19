@@ -543,6 +543,29 @@ async function handleStatusChange(selectEl) {
 window.handleStatusChange = handleStatusChange;
 
 // ============================================================
+// Hide Complaint Handler (Soft Delete)
+// ============================================================
+async function handleHideComplaint(id) {
+  if (!confirm('Hide this complaint from history? (It will still count in analytics)')) return;
+  try {
+    const res = await fetch('/hide_complaint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (res.ok) {
+      refreshDashboard();
+    } else {
+      const data = await res.json();
+      alert('❌ ' + (data.error || 'Failed to hide complaint'));
+    }
+  } catch (e) {
+    alert('❌ Network error: ' + e.message);
+  }
+}
+window.handleHideComplaint = handleHideComplaint;
+
+// ============================================================
 // History Row Renderer
 // ============================================================
 function renderHistoryRow(c, i, total, extraClass) {
@@ -568,6 +591,11 @@ function renderHistoryRow(c, i, total, extraClass) {
     ? '<span class="badge badge-danger" style="font-size:0.7rem;">⚠ SLA Breached</span>'
     : '<span class="badge badge-success" style="font-size:0.7rem;">✓ On Track</span>';
 
+  // Hide button (only for Closed/Ignored)
+  const hideBtn = (c.status === 'Closed' || c.status === 'Ignored')
+    ? `<button class="hide-btn" onclick="handleHideComplaint(${c.id})" title="Hide from history">✕</button>`
+    : '';
+
   row.innerHTML = `
     <td>${total - i}</td>
     <td title="${c.customer_name || 'N/A'}">${(c.customer_name || 'N/A').slice(0, 20)}</td>
@@ -581,7 +609,8 @@ function renderHistoryRow(c, i, total, extraClass) {
       </select>
     </td>
     <td><span class="badge badge-timeline">${timeInfo || 'N/A'}</span></td>
-    <td>${c.status === 'Ignored' ? '<span style="color:var(--text-faint);font-size:0.75rem;">—</span>' : slaHtml}</td>`;
+    <td>${c.status === 'Ignored' ? '<span style="color:var(--text-faint);font-size:0.75rem;">—</span>' : slaHtml}</td>
+    <td>${hideBtn}</td>`;
   DOM.historyBody.appendChild(row);
 }
 
@@ -626,10 +655,12 @@ async function refreshDashboard() {
       updateCharts();
     }
 
-    // --- Fetch complaints ---
+    // --- Fetch complaints (all for analytics, filtered for history) ---
     const compRes = await fetch('/complaints');
-    if (compRes.ok) {
-      const complaints = await compRes.json();
+    const historyRes = await fetch('/complaints?show_hidden=0');
+    if (compRes.ok && historyRes.ok) {
+      const allComplaints = await compRes.json();       // for dashboard + insights
+      const complaints = await historyRes.json();        // for history (excludes hidden)
 
       if (complaints.length > 0) {
         DOM.historyEmpty.style.display = 'none';
@@ -644,22 +675,22 @@ async function refreshDashboard() {
       // Render active lifecycle section first
       if (activeLifecycle.length > 0) {
         const headerRow = document.createElement('tr');
-        headerRow.innerHTML = `<td colspan="9" class="lifecycle-header">🔄 Active Lifecycle — ${activeLifecycle.length} complaint${activeLifecycle.length !== 1 ? 's' : ''} in progress</td>`;
+        headerRow.innerHTML = `<td colspan="10" class="lifecycle-header">🔄 Active Lifecycle — ${activeLifecycle.length} complaint${activeLifecycle.length !== 1 ? 's' : ''} in progress</td>`;
         DOM.historyBody.appendChild(headerRow);
 
         activeLifecycle.forEach((c, i) => renderHistoryRow(c, i, activeLifecycle.length, 'lifecycle-row'));
 
         // Separator
         const sepRow = document.createElement('tr');
-        sepRow.innerHTML = `<td colspan="9" class="lifecycle-separator">All Complaints</td>`;
+        sepRow.innerHTML = `<td colspan="10" class="lifecycle-separator">All Complaints</td>`;
         DOM.historyBody.appendChild(sepRow);
       }
 
       // Render rest
       otherComplaints.forEach((c, i) => renderHistoryRow(c, i, otherComplaints.length, ''));
 
-      // Combined insight metrics from ALL complaints
-      complaints.forEach(c => {
+      // Combined insight metrics from ALL complaints (including hidden)
+      allComplaints.forEach(c => {
         const r = (c.reason || '').toLowerCase();
         if (r.includes('safety') || r.includes('critical')) detectRisk++;
         if (r.includes('similar')) detectMatches++;
@@ -676,7 +707,7 @@ async function refreshDashboard() {
             DOM.historyEmpty.style.display = 'none';
             // Add separator
             const sepRow = document.createElement('tr');
-            sepRow.innerHTML = `<td colspan="9" class="lifecycle-separator">Report History</td>`;
+            sepRow.innerHTML = `<td colspan="10" class="lifecycle-separator">Report History</td>`;
             DOM.historyBody.appendChild(sepRow);
 
             reports.forEach(rpt => {
@@ -698,9 +729,9 @@ async function refreshDashboard() {
         }
       } catch (e) { /* report history optional */ }
 
-      // Count sentiments
+      // Count sentiments (from all data)
       const sentimentCounts = {};
-      complaints.forEach(c => {
+      allComplaints.forEach(c => {
         sentimentCounts[c.sentiment] = (sentimentCounts[c.sentiment] || 0) + 1;
       });
 
@@ -713,8 +744,8 @@ async function refreshDashboard() {
       // Dashboard recent (last 3)
       const recent = document.getElementById('dashboard-recent');
       if (recent) {
-        if (complaints.length > 0) {
-          const items = complaints.slice(0, 3);
+        if (allComplaints.length > 0) {
+          const items = allComplaints.slice(0, 3);
           recent.innerHTML = items.map(h => {
             const s = h.text.length > 60 ? h.text.slice(0, 60) + '…' : h.text;
             return `<div class="insight-row">${s} → <strong>${h.category}</strong> (${h.priority})</div>`;
@@ -767,7 +798,7 @@ async function refreshDashboard() {
       const combinedSentiment = stats.by_sentiment || sentimentCounts;
 
       // Update insight charts with combined data
-      updateInsightCharts(combinedSentiment, complaints);
+      updateInsightCharts(combinedSentiment, allComplaints);
     }
   } catch (e) {
     console.log('[Fixera] Could not load data:', e);
