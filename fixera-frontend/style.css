@@ -411,7 +411,7 @@ body {
 
 .chart-container {
   position: relative;
-  height: 380px;
+  height: 220px;
 }
 
 .chart-container canvas {
