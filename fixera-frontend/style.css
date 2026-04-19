@@ -247,6 +247,59 @@ body {
   text-align: center;
 }
 
+/* Status Dropdown in History Table */
+.status-dropdown {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 100px;
+}
+
+.status-dropdown:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+}
+
+/* Lifecycle section in history table */
+.lifecycle-header {
+  background: #eef2ff !important;
+  color: #3730a3;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 10px 16px !important;
+  border-bottom: 2px solid #c7d2fe;
+  letter-spacing: 0.02em;
+}
+
+.lifecycle-row {
+  background: rgba(37,99,235,0.03);
+  border-left: 3px solid #2563eb;
+}
+
+.lifecycle-row:hover {
+  background: rgba(37,99,235,0.06);
+}
+
+.lifecycle-separator {
+  background: var(--bg) !important;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 16px !important;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
 /* =============================================================
    STAT CARDS
    ============================================================= */
@@ -358,7 +411,7 @@ body {
 
 .chart-container {
   position: relative;
-  height: 260px;
+  height: 380px;
 }
 
 .chart-container canvas {
@@ -384,11 +437,13 @@ body {
 #input-section {
   display: flex;
   flex-direction: column;
+  min-height: 520px;
 }
 
 #results-section {
   display: flex;
   flex-direction: column;
+  min-height: 520px;
 }
 
 .result-placeholder {
@@ -428,7 +483,7 @@ textarea {
   font-family: var(--font);
   font-size: .875rem;
   resize: vertical;
-  min-height: 120px;
+  min-height: 160px;
   line-height: 1.55;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -1393,6 +1448,83 @@ textarea:focus {
   font-size: 0.82rem;
   color: var(--text-muted, #9ca3af);
   margin: 0;
+}
+
+/* Report Summary Card */
+.rpt-summary-card {
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.rpt-summary-card:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+
+/* Empty Placeholder */
+.rpt-empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  padding: 40px 20px;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.rpt-placeholder-icon {
+  margin-bottom: 16px;
+  opacity: 0.35;
+  color: var(--text-faint, #cbd5e1);
+}
+
+.rpt-placeholder-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text, #1e293b);
+  margin: 0 0 6px;
+}
+
+.rpt-placeholder-sub {
+  font-size: 0.82rem;
+  color: var(--text-sec, #64748b);
+  margin: 0 0 16px;
+  max-width: 260px;
+}
+
+.rpt-placeholder-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  margin: 0 0 20px;
+  font-style: italic;
+}
+
+.rpt-placeholder-tip {
+  font-size: 0.7rem;
+  color: var(--text-faint, #cbd5e1);
+  margin: 0;
+  padding: 6px 14px;
+  background: #f8fafc;
+  border-radius: 20px;
+  border: 1px solid #f1f5f9;
+}
+
+/* Fade transitions */
+.rpt-empty-placeholder.fade-out {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+#report-preview-stats {
+  transition: opacity 0.3s ease-in-out;
+  opacity: 0;
+}
+
+#report-preview-stats.visible {
+  opacity: 1;
 }
 
 /* Responsive */

@@ -66,6 +66,11 @@ def init_db():
         conn.execute('ALTER TABLE complaints ADD COLUMN order_id TEXT')
     except Exception:
         pass
+    # Add resolved_at column for lifecycle tracking
+    try:
+        conn.execute('ALTER TABLE complaints ADD COLUMN resolved_at TEXT')
+    except Exception:
+        pass
     conn.execute('''
         CREATE TABLE IF NOT EXISTS reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +82,16 @@ def init_db():
             low_count INTEGER DEFAULT 0,
             categories_json TEXT DEFAULT '{}',
             sentiments_json TEXT DEFAULT '{}'
+        )
+    ''')
+    # Activity logs for status change tracking
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            complaint_id INTEGER NOT NULL,
+            old_status TEXT,
+            new_status TEXT,
+            changed_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     try:
@@ -436,9 +451,15 @@ def predict():
     # =========================================================
 
     category_rules = {
-        'Product':   ['broken', 'damaged', 'defective'],
-        'Delivery':  ['late', 'delay', 'delivery'],
-        'Packaging': ['box', 'packaging', 'leak'],
+        'Product':   ['broken', 'damaged', 'defective', 'not working', 'malfunction', 'faulty',
+                      'battery', 'screen', 'cracked', 'overheating', 'draining', 'dead',
+                      'stopped working', 'poor quality', 'does not work', 'not functioning',
+                      'charger', 'charging', 'power', 'freeze', 'crash', 'glitch', 'error'],
+        'Delivery':  ['late', 'delay', 'delivery', 'shipping', 'not received', 'lost',
+                      'wrong address', 'tracking', 'courier', 'dispatched', 'transit',
+                      'not delivered', 'missing delivery', 'shipment'],
+        'Packaging': ['box damaged', 'packaging', 'leak', 'torn package', 'wrapper',
+                      'seal broken', 'crushed box', 'open package', 'packing'],
     }
 
     rule_category = 'Other'
@@ -490,12 +511,13 @@ def predict():
 
     reason_parts = []
 
-    # Hybrid category: ML (high confidence) > rules > dataset > Other
-    if ml_result and ml_result['confidence'] >= 0.6:
+    # Hybrid category: rules (keyword match) > ML (high confidence) > dataset > Other
+    if rule_category != 'Other':
+        category = rule_category
+        reason_parts.append(f'Detected keywords: {", ".join(detected_keywords)}')
+    elif ml_result and ml_result['confidence'] >= 0.6:
         category = ml_result['category']
         reason_parts.append(f'ML model prediction ({ml_result["confidence"]:.0%} confidence)')
-    elif rule_category != 'Other':
-        category = rule_category
     elif ds:
         category = ds['category']
     elif ml_result:
@@ -1009,6 +1031,7 @@ def get_complaints():
     conn.close()
 
     now = datetime.now()
+    sla_rules = {'High': 24, 'Medium': 48, 'Low': 72}
     complaints = []
     for r in rows:
         item = {
@@ -1028,10 +1051,41 @@ def get_complaints():
             'customer_name': r['customer_name'] or 'N/A',
             'order_id': r['order_id'] or 'N/A',
             'overdue': False,
+            'resolved_at': None,
+            'sla_breached': False,
+            'time_info': '',
         }
 
-        # Check SLA overdue
-        if r['sla_deadline'] and r['status'] != 'Resolved':
+        # Get resolved_at if exists
+        try:
+            item['resolved_at'] = r['resolved_at']
+        except Exception:
+            pass
+
+        # Compute timeline info and SLA breach dynamically
+        created = None
+        try:
+            created = datetime.fromisoformat(r['timestamp']) if r['timestamp'] else None
+        except Exception:
+            pass
+
+        if created:
+            sla_hours = sla_rules.get(r['priority'], 72)
+            if item['resolved_at']:
+                try:
+                    resolved_dt = datetime.fromisoformat(item['resolved_at'])
+                    diff_hrs = round((resolved_dt - created).total_seconds() / 3600, 1)
+                    item['time_info'] = f'Resolved in {diff_hrs}h'
+                    item['sla_breached'] = diff_hrs > sla_hours
+                except Exception:
+                    pass
+            elif r['status'] not in ('Resolved', 'Closed', 'Ignored'):
+                diff_hrs = round((now - created).total_seconds() / 3600, 1)
+                item['time_info'] = f'Pending {diff_hrs}h'
+                item['sla_breached'] = diff_hrs > sla_hours
+
+        # Legacy overdue check
+        if r['sla_deadline'] and r['status'] not in ('Resolved', 'Closed'):
             try:
                 deadline = datetime.fromisoformat(r['sla_deadline'])
                 if now > deadline:
@@ -1044,32 +1098,101 @@ def get_complaints():
     return jsonify(complaints)
 
 
+# Status transition rules: only forward movement allowed
+STATUS_TRANSITIONS = {
+    'Pending':     ['In Progress'],
+    'New':         ['In Progress'],
+    'In Progress': ['Resolved'],
+    'Resolved':    ['Closed'],
+    'Closed':      [],
+    'Ignored':     [],
+}
+
+
 @app.route('/update_status', methods=['POST'])
 def update_status():
-    """Update the status of a complaint by ID."""
+    """Update the status of a complaint with lifecycle validation and activity logging."""
     data = request.get_json()
 
     if not data or 'id' not in data or 'status' not in data:
         return jsonify({'error': 'Missing "id" or "status" field'}), 400
 
-    valid_statuses = ['Pending', 'In Progress', 'Resolved', 'Ignored']
-    if data['status'] not in valid_statuses:
+    new_status = data['status']
+    valid_statuses = ['Pending', 'New', 'In Progress', 'Resolved', 'Closed', 'Ignored']
+    if new_status not in valid_statuses:
         return jsonify({'error': f'Invalid status. Must be one of: {valid_statuses}'}), 400
 
     try:
         conn = get_db()
-        cur = conn.execute(
-            'UPDATE complaints SET status = ?, updated_at = ? WHERE id = ?',
-            (data['status'], datetime.now().isoformat(), data['id'])
-        )
-        conn.commit()
+        row = conn.execute('SELECT id, status, priority, timestamp FROM complaints WHERE id = ?', (data['id'],)).fetchone()
 
-        if cur.rowcount == 0:
+        if not row:
             conn.close()
             return jsonify({'error': 'Complaint not found'}), 404
 
+        old_status = row['status']
+
+        # Validate transition
+        allowed = STATUS_TRANSITIONS.get(old_status, [])
+        if new_status not in allowed:
+            conn.close()
+            return jsonify({
+                'error': f'Invalid status transition: {old_status} → {new_status}. Allowed: {allowed}'
+            }), 400
+
+        now_str = datetime.now().isoformat()
+        warning = None
+
+        # Update complaint
+        if new_status == 'Resolved':
+            conn.execute(
+                'UPDATE complaints SET status = ?, updated_at = ?, resolved_at = ? WHERE id = ?',
+                (new_status, now_str, now_str, data['id'])
+            )
+        else:
+            conn.execute(
+                'UPDATE complaints SET status = ?, updated_at = ? WHERE id = ?',
+                (new_status, now_str, data['id'])
+            )
+
+        # Activity log
+        conn.execute(
+            'INSERT INTO activity_logs (complaint_id, old_status, new_status, changed_at) VALUES (?, ?, ?, ?)',
+            (data['id'], old_status, new_status, now_str)
+        )
+
+        # Safety check: High priority closed within 10 minutes
+        if new_status == 'Closed' and row['priority'] == 'High' and row['timestamp']:
+            try:
+                created = datetime.fromisoformat(row['timestamp'])
+                diff_min = (datetime.now() - created).total_seconds() / 60
+                if diff_min < 10:
+                    warning = 'This complaint is being closed unusually quickly'
+            except Exception:
+                pass
+
+        conn.commit()
         conn.close()
-        return jsonify({'success': True, 'id': data['id'], 'status': data['status']})
+
+        resp = {'success': True, 'id': data['id'], 'status': new_status, 'old_status': old_status}
+        if warning:
+            resp['warning'] = warning
+        return jsonify(resp)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/activity_logs/<int:complaint_id>', methods=['GET'])
+def get_activity_logs(complaint_id):
+    """Return activity logs for a specific complaint."""
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            'SELECT id, complaint_id, old_status, new_status, changed_at FROM activity_logs WHERE complaint_id = ? ORDER BY id DESC',
+            (complaint_id,)
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

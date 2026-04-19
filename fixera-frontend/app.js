@@ -155,28 +155,7 @@ function renderResults(data) {
   summaryRow.appendChild(buildSummaryItem('Status', data.status, 'status'));
   DOM.grid.appendChild(summaryRow);
 
-  // 2. Confidence
-  const pct = Math.round(data.confidence * 100);
-  const conf = document.createElement('div');
-  conf.className = 'result-confidence';
-  conf.innerHTML = `
-    <div class="result-section-label">Confidence</div>
-    <div class="confidence-row">
-      <div class="confidence-bar-bg"><div class="confidence-bar-fill" style="width:0%"></div></div>
-      <span class="confidence-pct">${pct}%</span>
-    </div>`;
-  DOM.grid.appendChild(conf);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    conf.querySelector('.confidence-bar-fill').style.width = `${pct}%`;
-  }));
-
-  // 3. Explanation
-  const reason = document.createElement('div');
-  reason.className = 'result-explanation';
-  reason.innerHTML = `<div class="result-section-label">Why this decision was made</div><div class="explanation-box">${data.reason}</div>`;
-  DOM.grid.appendChild(reason);
-
-  // 4. Recommendation
+  // 2. Recommendation (skip confidence bar and explanation — backend still computes them)
   const action = document.createElement('div');
   action.className = 'result-recommendation';
   action.innerHTML = `
@@ -421,8 +400,25 @@ function initCharts() {
   if (ic5) {
     insChartCrit = new Chart(ic5, {
       type: 'bar',
-      data: { labels: ['Critical/Escalated', 'Normal'], datasets: [{ label: 'Cases', data: [0, 0], backgroundColor: ['#ef4444', '#3b82f6'], borderRadius: 6, barThickness: 40 }] },
-      options: barOpts(true),
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Complaints',
+          data: [],
+          backgroundColor: 'rgba(37,99,235,0.7)',
+          borderRadius: 6,
+          barThickness: 'flex',
+          maxBarThickness: 32,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: FONT, size: 10 }, color: TICK_C }, grid: { color: GRID_C }, border: { display: false } },
+          x: { ticks: { font: { family: FONT, size: 9 }, color: TICK_C, maxRotation: 45 }, grid: { display: false }, border: { display: false } },
+        }
+      }
     });
   }
 }
@@ -455,9 +451,21 @@ function updateInsightCharts(sentimentCounts, complaints) {
     insChartTrend.update();
   }
 
-  // Critical vs Normal
-  if (insChartCrit) {
-    insChartCrit.data.datasets[0].data = [detectEscalations + detectRisk, Math.max(0, stats.total - detectEscalations - detectRisk)];
+  // Complaints Per Hour
+  if (insChartCrit && complaints.length > 0) {
+    const hourCounts = {};
+    complaints.forEach(c => {
+      if (c.timestamp) {
+        try {
+          const d = new Date(c.timestamp);
+          const key = d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', hour12: false });
+          hourCounts[key] = (hourCounts[key] || 0) + 1;
+        } catch (e) {}
+      }
+    });
+    const entries = Object.entries(hourCounts).reverse();
+    insChartCrit.data.labels = entries.map(e => e[0]);
+    insChartCrit.data.datasets[0].data = entries.map(e => e[1]);
     insChartCrit.update();
   }
 
@@ -494,6 +502,87 @@ function showError(msg) {
 
 function hideError() {
   DOM.errorMsg.classList.add('hidden');
+}
+
+// ============================================================
+// Status Change Handler (Lifecycle Management)
+// ============================================================
+async function handleStatusChange(selectEl) {
+  const id = selectEl.dataset.id;
+  const newStatus = selectEl.value;
+
+  try {
+    const res = await fetch('/update_status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: parseInt(id), status: newStatus })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert('❌ ' + (data.error || 'Failed to update status'));
+      // Revert dropdown to old value
+      refreshDashboard();
+      return;
+    }
+
+    // Show warning if applicable
+    if (data.warning) {
+      alert('⚠️ Warning: ' + data.warning);
+    }
+
+    // Refresh to update timeline and SLA columns
+    refreshDashboard();
+  } catch (e) {
+    alert('❌ Network error: ' + e.message);
+    refreshDashboard();
+  }
+}
+
+// Make it available globally for inline onchange
+window.handleStatusChange = handleStatusChange;
+
+// ============================================================
+// History Row Renderer
+// ============================================================
+function renderHistoryRow(c, i, total, extraClass) {
+  history.push(c);
+  const row = document.createElement('tr');
+  if (extraClass) row.className = extraClass;
+  const shortText = c.text.length > 50 ? c.text.slice(0, 50) + '…' : c.text;
+  let priBadge = 'badge';
+  priBadge += c.priority === 'High' ? ' badge-danger' : c.priority === 'Medium' ? ' badge-warning' : ' badge-success';
+
+  // Status dropdown
+  const statusOpts = ['Pending', 'In Progress', 'Resolved', 'Closed', 'Ignored'];
+  const currentStatus = c.status || 'Pending';
+  const statusSelect = statusOpts.map(s =>
+    `<option value="${s}" ${s === currentStatus ? 'selected' : ''}>${s}</option>`
+  ).join('');
+
+  // Timeline info
+  const timeInfo = c.time_info || '';
+
+  // SLA indicator
+  const slaHtml = c.sla_breached
+    ? '<span class="badge badge-danger" style="font-size:0.7rem;">⚠ SLA Breached</span>'
+    : '<span class="badge badge-success" style="font-size:0.7rem;">✓ On Track</span>';
+
+  row.innerHTML = `
+    <td>${total - i}</td>
+    <td title="${c.customer_name || 'N/A'}">${(c.customer_name || 'N/A').slice(0, 20)}</td>
+    <td>${c.order_id || 'N/A'}</td>
+    <td><span class="text-truncate">${shortText}</span></td>
+    <td>${c.category}</td>
+    <td><span class="${priBadge}">${c.priority}</span></td>
+    <td>
+      <select class="status-dropdown" data-id="${c.id}" data-priority="${c.priority}" data-created="${c.timestamp || ''}" onchange="handleStatusChange(this)">
+        ${statusSelect}
+      </select>
+    </td>
+    <td><span class="badge badge-timeline">${timeInfo || 'N/A'}</span></td>
+    <td>${c.status === 'Ignored' ? '<span style="color:var(--text-faint);font-size:0.75rem;">—</span>' : slaHtml}</td>`;
+  DOM.historyBody.appendChild(row);
 }
 
 // ============================================================
@@ -548,24 +637,29 @@ async function refreshDashboard() {
         DOM.historyEmpty.style.display = '';
       }
 
-      complaints.forEach((c, i) => {
-        history.push(c);
-        const row = document.createElement('tr');
-        const shortText = c.text.length > 50 ? c.text.slice(0, 50) + '…' : c.text;
-        let priBadge = 'badge';
-        priBadge += c.priority === 'High' ? ' badge-danger' : c.priority === 'Medium' ? ' badge-warning' : ' badge-success';
-        row.innerHTML = `
-          <td>${complaints.length - i}</td>
-          <td title="${c.customer_name || 'N/A'}">${(c.customer_name || 'N/A').slice(0, 20)}</td>
-          <td>${c.order_id || 'N/A'}</td>
-          <td><span class="text-truncate">${shortText}</span></td>
-          <td>${c.category}</td>
-          <td><span class="${priBadge}">${c.priority}</span></td>
-          <td>${c.sentiment}</td>
-          <td><span class="badge badge-timeline">${{ High: 'Within 12 hours', Medium: 'Within 48 hours', Low: 'Within 72 hours' }[c.priority] || 'N/A'}</span></td>`;
-        DOM.historyBody.appendChild(row);
+      // Separate active lifecycle complaints from the rest
+      const activeLifecycle = complaints.filter(c => ['In Progress', 'Resolved'].includes(c.status));
+      const otherComplaints = complaints.filter(c => !['In Progress', 'Resolved'].includes(c.status));
 
-        // Count insight metrics
+      // Render active lifecycle section first
+      if (activeLifecycle.length > 0) {
+        const headerRow = document.createElement('tr');
+        headerRow.innerHTML = `<td colspan="9" class="lifecycle-header">🔄 Active Lifecycle — ${activeLifecycle.length} complaint${activeLifecycle.length !== 1 ? 's' : ''} in progress</td>`;
+        DOM.historyBody.appendChild(headerRow);
+
+        activeLifecycle.forEach((c, i) => renderHistoryRow(c, i, activeLifecycle.length, 'lifecycle-row'));
+
+        // Separator
+        const sepRow = document.createElement('tr');
+        sepRow.innerHTML = `<td colspan="9" class="lifecycle-separator">All Complaints</td>`;
+        DOM.historyBody.appendChild(sepRow);
+      }
+
+      // Render rest
+      otherComplaints.forEach((c, i) => renderHistoryRow(c, i, otherComplaints.length, ''));
+
+      // Combined insight metrics from ALL complaints
+      complaints.forEach(c => {
         const r = (c.reason || '').toLowerCase();
         if (r.includes('safety') || r.includes('critical')) detectRisk++;
         if (r.includes('similar')) detectMatches++;
@@ -573,27 +667,34 @@ async function refreshDashboard() {
         if (c.sentiment === 'Positive') detectPositive++;
       });
 
-      // --- Also show report history as summary rows (at top) ---
+      // --- Show report history at bottom ---
       try {
         const rptRes = await fetch('/report_history');
         if (rptRes.ok) {
           const reports = await rptRes.json();
-          if (reports.length > 0) DOM.historyEmpty.style.display = 'none';
-          // Reverse so oldest report is prepended first, newest ends up on top
-          [...reports].reverse().forEach(rpt => {
-            const row = document.createElement('tr');
-            row.style.background = 'rgba(37,99,235,0.04)';
-            const date = rpt.created_at ? new Date(rpt.created_at).toLocaleString() : '';
-            row.innerHTML = `
-              <td><span class="badge" style="background:#eef2ff;color:#2563eb;font-size:0.7rem;">Report</span></td>
-              <td colspan="2"><span class="text-truncate">${rpt.filename}</span></td>
-              <td style="font-size:0.8rem;color:var(--text-muted);">${date}</td>
-              <td><strong>${rpt.total_complaints}</strong> complaints</td>
-              <td style="font-size:0.78rem;">H:${rpt.high_count || 0} M:${rpt.medium_count || 0} L:${rpt.low_count || 0}</td>
-              <td></td>
-              <td><span class="badge badge-timeline">Bulk analysis</span></td>`;
-            DOM.historyBody.prepend(row);
-          });
+          if (reports.length > 0) {
+            DOM.historyEmpty.style.display = 'none';
+            // Add separator
+            const sepRow = document.createElement('tr');
+            sepRow.innerHTML = `<td colspan="9" class="lifecycle-separator">Report History</td>`;
+            DOM.historyBody.appendChild(sepRow);
+
+            reports.forEach(rpt => {
+              const row = document.createElement('tr');
+              row.style.background = 'rgba(37,99,235,0.04)';
+              const date = rpt.created_at ? new Date(rpt.created_at).toLocaleString() : '';
+              row.innerHTML = `
+                <td><span class="badge" style="background:#eef2ff;color:#2563eb;font-size:0.7rem;">Report</span></td>
+                <td colspan="2"><span class="text-truncate">${rpt.filename}</span></td>
+                <td style="font-size:0.8rem;color:var(--text-muted);">${date}</td>
+                <td><strong>${rpt.total_complaints}</strong> complaints</td>
+                <td style="font-size:0.78rem;">H:${rpt.high_count || 0} M:${rpt.medium_count || 0} L:${rpt.low_count || 0}</td>
+                <td></td>
+                <td></td>
+                <td><span class="badge badge-timeline">Bulk analysis</span></td>`;
+              DOM.historyBody.appendChild(row);
+            });
+          }
         }
       } catch (e) { /* report history optional */ }
 
@@ -763,7 +864,11 @@ refreshDashboard();
       // Download link
       downloadLink.href = data.file;
       downloadLink.classList.remove('hidden');
-      previewText.textContent = '';
+      previewText.textContent = `${data.total} complaints analyzed · ${data.high || 0} high priority`;
+
+      // Fade out placeholder, fade in stats
+      const placeholder = document.getElementById('report-placeholder');
+      if (placeholder) placeholder.classList.add('fade-out');
 
       // Preview stat cards
       previewStats.classList.remove('hidden');
@@ -773,6 +878,9 @@ refreshDashboard();
         <div class="rpt-stat rpt-stat-medium"><div class="rpt-stat-number">${data.medium || 0}</div><div class="rpt-stat-label">Medium</div></div>
         <div class="rpt-stat rpt-stat-low"><div class="rpt-stat-number">${data.low || 0}</div><div class="rpt-stat-label">Low</div></div>
       `;
+
+      // Trigger fade-in after a tiny delay
+      setTimeout(() => previewStats.classList.add('visible'), 50);
 
       // Refresh history
       loadReportHistory();
@@ -861,9 +969,15 @@ refreshDashboard();
   let refreshing = false;
   const INTERVAL_MS = 6000;
 
+  function getActiveView() {
+    return (window.location.hash.replace('#', '') || 'dashboard');
+  }
+
   async function tick() {
     if (refreshing) return;
     if (document.visibilityState !== 'visible') return;
+    // Only auto-refresh when on dashboard — prevents history scroll reset
+    if (getActiveView() !== 'dashboard') return;
     refreshing = true;
     try {
       await refreshDashboard();
@@ -875,6 +989,6 @@ refreshDashboard();
 
   // Refresh immediately when tab becomes visible again
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') tick();
+    if (document.visibilityState === 'visible' && getActiveView() === 'dashboard') tick();
   });
 })();

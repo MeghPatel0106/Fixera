@@ -70,3 +70,15 @@
 2026-04-19 03:27:20,021 [INFO]   [2] From: kunjvaghani1.2448@gmail.com | Subject: Increase in the price of item P456
 2026-04-19 03:27:20,022 [INFO] Saved 2 complaint(s) to /Users/meghpatel/Desktop/Fixera/Fixera/fixera-backend/complaints.csv
 2026-04-19 03:27:20,022 [INFO] Done.
+2026-04-19 06:30:47,519 [INFO] Connecting to Gmail IMAP...
+2026-04-19 06:30:49,774 [INFO] Login successful.
+2026-04-19 06:30:51,310 [INFO] No new (unseen) emails found.
+2026-04-19 06:44:27,399 [INFO] Connecting to Gmail IMAP...
+2026-04-19 06:44:29,361 [INFO] Login successful.
+2026-04-19 06:44:30,382 [INFO] No new (unseen) emails found.
+2026-04-19 06:44:35,185 [INFO] Connecting to Gmail IMAP...
+2026-04-19 06:44:37,041 [INFO] Login successful.
+2026-04-19 06:44:38,270 [INFO] No new (unseen) emails found.
+2026-04-19 07:02:41,774 [INFO] Connecting to Gmail IMAP...
+2026-04-19 07:02:43,105 [INFO] Login successful.
+2026-04-19 07:02:44,033 [INFO] No new (unseen) emails found.
